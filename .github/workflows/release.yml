@@ -60,19 +60,22 @@ jobs:
           name: ${{ github.ref_name }}
           generate_release_notes: true
           body: |
-            Configurador del ratón HXSJ S700 «G6» — descarga y ejecuta, sin instalar nada.
+            Configurator for the HXSJ S700 «G6» gaming mouse — download, run, done. Nothing to install.
 
-            * `s700-host-windows-x86_64.exe` — Windows 10/11, doble clic. Abre la interfaz en
-              <http://127.0.0.1:8760/> y habla con el ratón él mismo: no hay permisos que dar.
-            * `s700-host-linux-x86_64` — Linux x86_64. Antes, una vez:
+            * `s700-host-windows-x86_64.exe` — Windows 10/11: double click and that is it. It opens
+              your browser with the interface already loaded and talks to the mouse itself; there
+              are no permissions to grant and no address to type (`--no-open` if you would rather
+              open it yourself; it listens on <http://127.0.0.1:8760/>).
+            * `s700-host-linux-x86_64` — Linux x86_64: run it, same interface. Before the first
+              run, once, the kernel node permission:
               `sudo cp 99-s700-hid.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger`
-            * `S700-configurator.html` — un solo fichero: ábrelo en Chrome/Edge/Brave y pulsa
-              *Connect mouse* (WebHID; no necesita el binario).
-            * `99-s700-hid.rules` — permiso del nodo `/dev/hidraw*` para Linux.
+            * `S700-configurator.html` — one file, if you would rather not run anything: open it in
+              Chrome/Edge/Brave and press *Connect mouse* (WebHID).
+            * `99-s700-hid.rules` — the `/dev/hidraw*` permission rule for Linux.
 
-            O usa la versión servida: <https://jo3l.github.io/s700-mouse-configurator/>
+            Or use the served version: <https://jo3l.github.io/s700-mouse-configurator/>
 
-            Haz un backup desde la pestaña *Backup* antes de escribir nada.
+            Back up from the *Backup* tab before writing anything to the mouse.
           files: |
             s700-host-linux-x86_64
             s700-host-windows-x86_64.exe

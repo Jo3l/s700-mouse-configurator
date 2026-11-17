@@ -1,239 +1,234 @@
-# Configurador libre del ratón HXSJ S700 «G6» — sin drivers, en Linux, Windows o el navegador
+# Open-source configurator for the HXSJ S700 «G6» gaming mouse — no drivers, on Linux, Windows or in your browser
 
-[![licencia MIT](https://img.shields.io/badge/licencia-MIT-blue.svg)](LICENSE)
-![plataformas](https://img.shields.io/badge/plataformas-Linux%20%7C%20Windows%20%7C%20navegador-informational)
-![host nativo](https://img.shields.io/badge/host%20nativo-~820%20KB-success)
-![sin dependencias](https://img.shields.io/badge/dependencias-ninguna-brightgreen)
-[![última versión](https://img.shields.io/github/v/release/Jo3l/s700-mouse-configurator)](https://github.com/Jo3l/s700-mouse-configurator/releases/latest)
-[![descargas](https://img.shields.io/github/downloads/Jo3l/s700-mouse-configurator/total)](https://github.com/Jo3l/s700-mouse-configurator/releases)
+[![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20browser-informational)
+![native host](https://img.shields.io/badge/native%20host-~820%20KB-success)
+![no dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)
+[![latest release](https://img.shields.io/github/v/release/Jo3l/s700-mouse-configurator)](https://github.com/Jo3l/s700-mouse-configurator/releases/latest)
+[![downloads](https://img.shields.io/github/downloads/Jo3l/s700-mouse-configurator/total)](https://github.com/Jo3l/s700-mouse-configurator/releases)
 
-**Read this in English: [README.en.md](README.en.md)**
+**Leer en español: [README.es.md](README.es.md)**
 
-## Descargar y usar en un minuto
+## Download and run in a minute
 
-| Quiero… | Cómo |
+| I want to… | How |
 |---|---|
-| **usarlo sin descargar nada** | **<https://jo3l.github.io/s700-mouse-configurator/>** — la herramienta servida, con WebHID; abre la página y pulsa *Connect mouse* |
-| **Windows** | [`s700-host-windows-x86_64.exe`](https://github.com/Jo3l/s700-mouse-configurator/releases/latest) — doble clic, abre la interfaz en `127.0.0.1:8760` y habla con el ratón él mismo; sin permisos ni instalador |
-| **Linux** | [`s700-host-linux-x86_64`](https://github.com/Jo3l/s700-mouse-configurator/releases/latest) + `99-s700-hid.rules` (una vez: `sudo cp 99-s700-hid.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules`) |
-| **un solo fichero HTML** | `S700-configurator.html` de la release: se abre con doble clic en Chrome/Edge/Brave, sin servidor |
+| **use it without downloading anything** | **<https://jo3l.github.io/s700-mouse-configurator/>** — the tool served as a web page (WebHID); open it and press *Connect mouse* |
+| **Windows** | [`s700-host-windows-x86_64.exe`](https://github.com/Jo3l/s700-mouse-configurator/releases/latest) — double click and that is it: it opens your browser with the UI already loaded and talks to the mouse itself; no permissions, no installer |
+| **Linux** | [`s700-host-linux-x86_64`](https://github.com/Jo3l/s700-mouse-configurator/releases/latest) + `99-s700-hid.rules` (once: `sudo cp 99-s700-hid.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules`) |
+| **a single HTML file** | `S700-configurator.html` from the release: double click it in Chrome/Edge/Brave, no server needed |
 
-Los binarios los compila GitHub Actions al publicar cada versión
-([`.github/workflows/release.yml`](.github/workflows/release.yml)), y la web se
-publica sola en GitHub Pages desde `main`
-([`.github/workflows/pages.yml`](.github/workflows/pages.yml)). Antes de escribir en el
-ratón, haz una copia en la pestaña *Backup*.
+The binaries are built by GitHub Actions on every release
+([`.github/workflows/release.yml`](.github/workflows/release.yml)) and the web page is
+published to GitHub Pages from `main`
+([`.github/workflows/pages.yml`](.github/workflows/pages.yml)). Back up from the
+*Backup* tab before writing to the mouse.
 
-Configurador **libre, sin drivers y sin instalar nada** para el ratón gaming
-**HXSJ S700** — el que se vende también como **«G6»** o *S700 Gaming Mouse*, y que
-solo trae una herramienta para Windows de 2016 (`S700 Gaming Mouse.exe`, MFC + GDI+,
-sin firma). Remapea los **10 botones**, ajusta las **6 etapas de DPI**, crea
-**macros**, cambia la **iluminación RGB**, gestiona los **4 perfiles** y guarda
-**copias de seguridad** — desde **Linux**, **Windows** o **cualquier navegador
-Chromium**, sin el software del fabricante y sin controladores.
+Free, **driver-free, install-nothing** configurator for the **HXSJ S700** gaming
+mouse (also sold as **«G6»** or *S700 Gaming Mouse*), a cheap 10-button wired mouse
+that only ships a 2016 Windows-only MFC tool (`S700 Gaming Mouse.exe`, unsigned, no
+source). Remap the **10 buttons**, set the **6 DPI stages**, build **macros**, change
+the **RGB lighting**, manage the **4 profiles** and keep **backups** — from **Linux**,
+**Windows** or **any Chromium browser**, without the vendor software and without
+installing a driver.
 
-El ratón guarda su configuración en memoria propia y habla **informes HID feature**,
-así que la herramienta puede ser una página web. Este repositorio es el protocolo
-descifrado, un configurador web (WebHID), un host nativo en Rust y las pruebas que
-comparan byte a byte con lo que escribe el programa original.
+The mouse stores its configuration in its own flash and speaks **HID feature
+reports**, so the tool can be a web page. This repository is the reverse-engineered
+protocol, a WebHID configurator, a native Rust host and the tests that compare
+everything byte for byte against what the vendor tool writes.
 
-![Pestaña Configuration: los 10 botones y sus direcciones](docs/img/configurator.png)
+![Configuration tab: the 10 buttons and their addresses](docs/img/configurator.png)
 
-## Qué se puede cambiar
+## What you can change
 
 | | |
 |---|---|
-| **Botones** | los 10 (izquierdo, derecho, rueda, laterales, rueda inclinada, botón de DPI) → 20 acciones: botón, tecla, multimedia, macro, DPI loop, LED loop, autofire, atajos |
-| **DPI** | 6 etapas, hasta 6 colores distintos de LED, un color por etapa |
-| **Iluminación** | los 4 efectos que trae el firmware (ids 8–11), brillo, 7 colores de usuario, 6 colores por etapa y máscara del ciclo |
-| **Macros** | nombre + pasos (tecla y retardo), hasta 16 pasos en memoria, asignables a un botón |
-| **Perfiles** | 4 perfiles de botones, con el activo a golpe de botón |
-| **Backup** | exportar/importar la configuración completa en un JSON; la imagen de fábrica va incluida |
-| **Guardado** | todo cambio se guarda solo en el navegador; al ratón solo se escribe cuando pulsas **Apply** |
+| **Buttons** | all 10 (left, right, wheel, side, wheel tilt, DPI button) → 20 actions: mouse button, key, media key, macro, DPI loop, LED loop, autofire, shortcuts |
+| **DPI** | 6 stages, up to 6 different LED colours, one per stage |
+| **Lighting** | the 4 effects the firmware actually has (ids 8–11), brightness, 7 user colours, 6 per-stage colours and the cycle mask |
+| **Macros** | name + steps (key and delay), up to 16 steps in memory, assignable to a button |
+| **Profiles** | 4 button profiles, active one switchable from a button |
+| **Backup** | export/import the whole configuration as JSON; the factory image ships with the tool |
+| **Saving** | every change is saved in the browser; the mouse only changes when you press **Apply** |
 
-![Pestaña Lighting: efectos, brillo y los 13 colores](docs/img/lighting.png)
+![Lighting tab: effects, brightness and the 13 colours](docs/img/lighting.png)
 
-## Tres formas de usar el mismo proyecto
+## Three ways to run the same project
 
-La interfaz es **la misma** en las tres; no hay código duplicado.
+The interface is **identical** in all three; no code is duplicated.
 
-| | Permisos | Qué necesitas | Tamaño |
+| | Permissions | What you need | Size |
 |---|---|---|---|
-| **Página web** (`make serve` + Chrome) | diálogo de WebHID por origen + regla udev en Linux | un navegador Chromium | 0 |
-| **Un solo fichero HTML** (`make build`) | lo mismo (se abre como `file://`) | un navegador Chromium | ~520 KB |
-| **Host nativo** (`make native`) | **nada en Windows**; regla udev en Linux | nada instalado | ~820 KB |
+| **Web page** (`make serve` + Chrome) | WebHID permission per origin + udev rule on Linux | a Chromium browser | 0 |
+| **Single HTML file** (`make build`) | same (it opens as `file://`) | a Chromium browser | ~520 KB |
+| **Native host** (`make native`) | **nothing on Windows**; udev rule on Linux | nothing installed | ~820 KB |
 
-El host nativo (`native/`) es un ejecutable de Rust sin dependencias que lleva la UI
-dentro, la sirve en `127.0.0.1` y habla el HID él mismo: no hay WebHID, ni diálogo
-de permisos del navegador, ni instalador. En Windows es donde más se nota — allí no
-hay que conceder nada.
+The native host (`native/`) is a dependency-free Rust binary that embeds the UI,
+serves it on `127.0.0.1` and talks to the HID device itself: no WebHID, no browser
+permission dialog, no installer. Windows is where it pays off most — there is
+nothing to grant.
 
-## Empezar
+## Quick start
 
 ### Windows
 
 ```powershell
-# con el host nativo (recomendado): sin permisos de nada
-s700-host.exe            # abre el navegador en http://127.0.0.1:8760/
+s700-host.exe            # double click: opens your browser with the UI loaded
 ```
 
-o coge `dist/S700-configurador.html`, ábrelo con doble clic en Chrome/Edge/Brave y
-pulsa **Connect mouse**. Cierra antes la herramienta del fabricante y su bandeja: la
-abren en exclusiva y el ratón no se deja.
+or grab `dist/S700-configurador.html`, double-click it in Chrome/Edge/Brave and press
+**Connect mouse**. Close the vendor tool and its tray helper first: they hold the
+device exclusively.
 
 ### Linux
 
 ```bash
-sudo cp native/99-s700-hid.rules /etc/udev/rules.d/     # una vez
+sudo cp native/99-s700-hid.rules /etc/udev/rules.d/     # once
 sudo udevadm control --reload-rules && sudo udevadm trigger
 
-make native && ./native/target/release/s700-host          # o: make native-run
-./native/target/release/s700-host --list                  # ¿ve el ratón?
+make native && ./native/target/release/s700-host          # or: make native-run
+./native/target/release/s700-host --list                  # does it see the mouse?
 ```
 
-El nodo `/dev/hidraw*` es `0600 root:root` en el kernel: eso lo necesitas igual con
-el navegador, no es cosa de esta herramienta.
+`/dev/hidraw*` is `0600 root:root` in the kernel: every tool needs that rule, the
+browser included. It is not a quirk of this one.
 
-### Navegador, sin instalar nada
+### Browser only
 
 ```bash
-make build       # genera dist/S700-configurador.html
-make serve       # o servir la versión con módulos en http://localhost:8099/web/
+make build       # builds dist/S700-configurador.html
+make serve       # or serve the modular version at http://localhost:8099/web/
 ```
 
-Solo navegadores con **WebHID**: Chrome, Edge, Brave, Opera, Vivaldi o Arc.
-Firefox y Safari no lo implementan.
+Chromium only: Chrome, Edge, Brave, Opera, Vivaldi or Arc. Firefox and Safari do not
+implement WebHID.
 
 ### macOS
 
-La página web funciona en Chrome (WebHID); el host nativo aún no está portado.
+The web page works in Chrome (WebHID); the native host has not been ported yet.
 
-## Compatibilidad
+## Compatibility
 
-* **HXSJ S700 con cable** — `VID:PID 30FA:1540`, informe feature **id 7 de 64 bytes**,
-  colección vendor `0xFF00/0x01`. Es la unidad con la que se ha medido todo.
-* El ratón solo escribe: **no contesta a `GetFeature`** (`docs/PROTOCOL.md` §4), así
-  que la configuración de partida es la imagen de fábrica leída del software original.
-* Sin probar: la variante inalámbrica, otras revisiones de firmware del mismo modelo.
-  Si tu unidad no aparece, `--list` y el panel *Debug* dicen qué se ve.
+* **HXSJ S700 wired** — `VID:PID 30FA:1540`, **feature report id 7, 64 bytes**, vendor
+  collection `0xFF00/0x01`. That is the unit everything was measured on.
+* The mouse is **write-only**: it does not answer `GetFeature` (`docs/PROTOCOL.md` §4),
+  so the starting point is the factory image read out of the vendor tool.
+* Not tested: the wireless variant, other firmware revisions of the same model. If
+  your unit does not show up, `--list` and the *Debug* panel tell you what is seen.
 
-## Preguntas frecuentes
+## FAQ
 
-**¿Funciona sin el programa del fabricante?** Sí: es exactamente lo que hace. No
-hace falta instalarlo, ni Wine, ni Windows.
+**Does it work without the vendor software?** Yes — that is the whole point. No
+vendor tool, no Wine, no Windows needed.
 
-**¿Necesito permisos de administrador?** En Windows no. En Linux hay que dar acceso
-al nodo del kernel una vez (regla udev incluida); sin eso no hay forma, ni con
-navegador ni con binario.
+**Do I need administrator rights?** Not on Windows. On Linux you grant access to the
+kernel node once (udev rule included); nothing can talk to the mouse without it.
 
-**¿Puede dejar el ratón inservible?** No hay caso conocido: la configuración es
-memoria flash aparte del firmware. Aun así, **haz una copia antes** (pestaña
-*Backup*) y ten a mano la herramienta del fabricante; volver a escribir una
-configuración conocida lo deja como estaba.
+**Can it brick the mouse?** No case is known: the configuration is flash separate
+from the firmware. Still, **back up first** (*Backup* tab) and keep the vendor tool
+around; writing a known configuration back always recovers it.
 
-**¿Por qué solo hay 4 efectos de luz si la herramienta del fabricante lista 14?**
-Porque el firmware implementa cuatro (ids 8–11) y la lista del fabricante es genérica:
-repite nombres y los apunta a ids que no existen. Medido entrada por entrada, y luego
-mirado en el ratón: 8 parpadea, 9 deja el color fijo, 10 respira (con sus propios
-colores) y 11 recorre la tira; 12–15 no encienden nada. Los nombres de la herramienta
-no describen el hardware (`docs/PROTOCOL.md` §5-quater).
+**Why only 4 lighting effects when the vendor tool lists 14?** Because the firmware
+implements four (ids 8–11) and the vendor list is generic: it repeats names and points
+them at ids that do not exist. Measured entry by entry, then watched on the mouse: 8
+flickers, 9 holds a fixed colour, 10 breathes (with its own colours) and 11 walks the
+strip; 12–15 light nothing. The vendor labels do not describe the hardware
+(`docs/PROTOCOL.md` §5-quater).
 
-**¿Cómo se averiguó el protocolo?** Ingeniería inversa del `.exe` y captura del
-tráfico HID real, ejecutando la herramienta original bajo Wine con una DLL que
-suplanta `HID/SetupAPI`. Todo el arnés está en `tools/`.
+**How was the protocol found?** Reverse engineering of the `.exe` plus capturing the
+real HID traffic by running the vendor tool under Wine with a DLL that impersonates
+`HID/SetupAPI`. The whole harness is in `tools/`.
 
-**¿Hace falta internet?** No: ninguna de las tres formas sale de tu equipo.
+**Does it need internet?** No. None of the three ways leaves your machine.
 
-**¿Y el teclado/software propio del ratón (autofire, DPI loop)?** Las 20 acciones del
-firmware están soportadas; son las que trae el propio ratón.
+## Documentation
 
-## Documentación
+* **[docs/PROTOCOL.md](docs/PROTOCOL.md)** — protocol and memory map, with what is
+  verified and what is not (Spanish version: `docs/PROTOCOL.es.md`).
+* **[docs/NATIVE.md](docs/NATIVE.md)** — the native host: how it fits, permissions,
+  building it and what is still unproven.
+* Spanish README: **[README.es.md](README.es.md)**.
 
-* **[docs/PROTOCOL.md](docs/PROTOCOL.md)** — protocolo y mapa de memoria, con lo
-  verificado y lo que falta.
-* **[docs/NATIVE.md](docs/NATIVE.md)** — el host nativo: cómo encaja, permisos,
-  compilación y qué queda por probar.
+## Status
 
-## Estado
-
-| Pieza | Estado |
+| Piece | State |
 |---|---|
-| Protocolo (tramas, comandos, bloques de escritura) | verificado contra el programa original |
-| Mapa de botones y perfiles | verificado byte a byte |
-| Tabla de acciones (1–20) | verificada |
-| DPI (empaquetado en nibbles) | verificado; la correspondencia con el DPI real está pendiente |
-| LED | **descifrado**: 4 efectos (ids 8–11; 12–15 no encienden, 0–7 sin medir), brillo (`0x3F`), 7 colores de usuario y 6 de etapa (`0x20–0x31`, 4 bits por canal con el **nivel invertido**), máscara del ciclo (`0x1D`). Simetría y dirección (`0x3A`) **sin confirmar**: no se les ha visto efecto |
-| Tiempos y registros de macros | parcialmente verificado |
-| Lectura (`GetFeature`) | probada en hardware y no devuelve el protocolo: la base es la imagen de fábrica |
-| Tamaño de informe (64 bytes de datos) | confirmado en el ratón real |
-| Escritura | siempre la **imagen completa** (108 bloques), como el fabricante; escribir solo los bloques tocados hace que el ratón descarte el cambio |
-| Host nativo | Linux compilado y probado hasta la escritura (bloqueada por permisos del nodo); `.exe` de Windows compilado, **sin probar en Windows** |
-| CLI de Python | funciona contra backups; falta probar con el ratón real |
+| Protocol (frames, commands, write blocks) | verified against the vendor tool |
+| Button map and profiles | verified byte by byte |
+| Action table (1–20) | verified |
+| DPI (nibble packing) | verified; real DPI values still unconfirmed |
+| LED | **decoded**: 4 effects (ids 8–11; 12–15 light nothing, 0–7 unmeasured), brightness (`0x3F`), 7 user colours and 6 per-stage (`0x20–0x31`, 4-bit channels with an **inverted level**), cycle mask (`0x1D`). Symmetry and direction (`0x3A`) **unconfirmed**: no effect seen |
+| Macro timing and records | partially verified |
+| Reading (`GetFeature`) | tried on hardware, it does not return the protocol: the base is the factory image |
+| Report size (64 data bytes) | confirmed on the real mouse |
+| Writing | always the **whole image** (108 blocks), like the vendor; writing only the touched blocks makes the mouse drop the change |
+| Native host | Linux built and tested up to the write (blocked by node permissions); the Windows `.exe` builds but is **untested on Windows** |
+| Python CLI | works against backups; not yet tried on the real mouse |
 
-## Cómo habla el ratón (resumen)
+## How the mouse talks (summary)
 
 ```
-informe feature id 7, 64 bytes de datos (colección 0xFF01)
-18 <cmd> <idx> <addr_lo> <addr_hi> <dato> <len-1> ...
+feature report id 7, 64 data bytes (0xFF01 collection)
+18 <cmd> <idx> <addr_lo> <addr_hi> <data> <len-1> ...
 
-cmd 03 = escribir byte (idx = posición)   cmd 05 = leer byte
-cmd 09 = confirmar bloque en <addr>       cmd 00 = fin   cmd 10 = fin de sesión
+cmd 03 = write byte (idx = position)   cmd 05 = read byte
+cmd 09 = commit block at <addr>        cmd 00 = end   cmd 10 = end of session
 ```
 
-El programa del fabricante sube la configuración en bloques de 8 bytes y usa **solo**
-`HidD_SetFeature`/`HidD_GetFeature`. Detalle completo en
+The vendor tool uploads the configuration in 8-byte blocks and uses **only**
+`HidD_SetFeature`/`HidD_GetFeature`. Full detail in
 [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
-## CLI de backup y ajustes
+## Backup CLI
 
 ```bash
 pip install hidapi
 python tools/g6cli.py list
-python tools/g6cli.py dump mi-raton.json     # copia + resumen (root en Linux)
-python tools/g6cli.py show mi-raton.json
-python tools/g6cli.py set-key 8 20           # botón 8 -> acción 20
+python tools/g6cli.py dump my-mouse.json     # backup + summary (root on Linux)
+python tools/g6cli.py show my-mouse.json
+python tools/g6cli.py set-key 8 20           # button 8 -> action 20
 python tools/g6cli.py set-profile 2
-python tools/g6cli.py restore mi-raton.json
+python tools/g6cli.py restore my-mouse.json
 ```
 
-## Desarrollo
+## Development
 
 ```bash
 make serve     # http://localhost:8099/web/index.html
-make build     # dist/S700-configurador.html (un solo fichero, para file://)
+make build     # dist/S700-configurador.html (single file, for file://)
 make native    # native/target/release/s700-host
-make test      # 178 comprobaciones
+make test      # 178 assertions
 ```
 
-Las pruebas reproducen bytes capturados del programa original
-(`tools/probe/baseline.log`), así que si el ratón cambia de protocolo lo detectan.
-Para probar la interfaz sin hardware está `tools/mock_hid.js` (ratón simulado).
+The tests replay bytes captured from the vendor tool (`tools/probe/baseline.log`), so
+a protocol change shows up immediately. `tools/mock_hid.js` is a simulated mouse for
+working on the UI without hardware.
 
-## Estructura
+## Layout
 
 ```
-dist/                S700-configurador.html — un solo fichero, doble clic
-docs/PROTOCOL.md     protocolo y mapa de memoria
-docs/NATIVE.md       host nativo: diseño, permisos y compilación
-web/                 configurador WebHID (g6.js protocolo, core.js lógica, app.js UI)
-web/bridge.js        enchufe que sustituye navigator.hid cuando sirve el host nativo
-native/              host nativo en Rust, sin dependencias: UI + HID en un ejecutable
-tools/g6proto.py     implementación de referencia del protocolo (Python)
-tools/g6cli.py       CLI de backup y ajustes
-tools/build.py       empaqueta web/ en dist/ (sin módulos ES, para file://)
-tools/mock_hid.js    ratón simulado para probar la web sin hardware
-tools/hid_shim.c     DLL que suplanta HID/SetupAPI para capturar el tráfico bajo Wine
-tools/probe/         arnés de ingeniería inversa y logs capturados
-tools/test_*         pruebas (reproducen el tráfico real del fabricante)
+dist/                S700-configurador.html — one file, double click
+docs/PROTOCOL.md     protocol and memory map
+docs/NATIVE.md       native host: design, permissions, build
+web/                 WebHID configurator (g6.js protocol, core.js logic, app.js UI)
+web/bridge.js        shim that replaces navigator.hid when the native host serves it
+native/              Rust host, no dependencies: UI + HID in one executable
+tools/g6proto.py     reference implementation of the protocol (Python)
+tools/g6cli.py       backup and settings CLI
+tools/build.py       bundles web/ into dist/ (no ES modules, for file://)
+tools/mock_hid.js    simulated mouse for UI work without hardware
+tools/hid_shim.c     DLL that impersonates HID/SetupAPI to capture traffic under Wine
+tools/probe/         reverse-engineering harness and captured logs
+tools/test_*         tests (they replay the vendor tool's real traffic)
 ```
 
-## Aviso
+## Disclaimer
 
-Proyecto de ingeniería inversa con fines de **interoperabilidad**. No está afiliado
-a HXSJ ni a ninguna marca; el software del fabricante no se distribuye aquí. Escribir
-en la memoria del ratón puede dejarlo en un estado raro (se recupera volviendo a
-escribir una configuración conocida o con el programa del fabricante). Usa el backup.
+Reverse-engineering project for **interoperability**. Not affiliated with HXSJ or any
+brand; the vendor software is not distributed here. Writing to the mouse's memory can
+leave it in an odd state (writing back a known configuration, or the vendor tool,
+recovers it). Keep a backup.
 
-## Licencia
+## License
 
 [MIT](LICENSE).
