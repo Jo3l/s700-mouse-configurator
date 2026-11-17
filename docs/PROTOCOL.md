@@ -358,27 +358,67 @@ The macro editor also supports steps of type XY (movement), CPI (DPI
 change), LED and delays, and repeat options ("Run Until release", "Run Until
 Click", "Repeat On = N").
 
-## 5-quater. LED: the lighting block is deciphered
+## 5-quater. LED: the fourteen effects, measured one by one
 
-Measured with the Wine harness: **one** field of the `config.ini` that the
-tool loads is changed, it is run, and the image it writes is compared with the baseline
-(`tools/probe/led_sweep.py`, results in `tools/probe/led_map.json`).
+Measured by driving the vendor tool under Wine: pick an effect (or move one of its
+controls) in its UI, press Apply, and read the image it writes. The tool also saves the
+`config.ini` it applied, which names every field it moved. Instruments:
+`tools/probe/led_capture.py` (screenshot + full image per dropdown entry),
+`tools/probe/led_cases.py` (a list of UI actions, one Apply each) and
+`tools/probe/led_sweep.py` (one `config.ini` field at a time).
 
 | byte | content |
 |---|---|
-| `0x1C` | high nibble = `LED_TYPE` (effect); low = `LED_CYCTIME` (clamped to 0–7) |
+| `0x1C` | high nibble = effect id; low nibble = cycle speed (`LED_CYCTIME`, 0–7) |
+| `0x33` | bit `0x80` = the vendor's **second group of names**; the low bits (`0x3F`) stay as they were |
 | `0x1D` | `0x80 \| CYC_7COL_EN`: one bit per colour, the ones that enter the cycle |
 | `0x20–0x31` | **six pairs**: high nibble = `LED_USER0…5` (user colour), low = `DPI0…5` (stage colour) |
-| `0x3A` | bit `0x40` = `LED_FEATURE_SYMMETRY`, bit `0x10` = `LED_FEATURE_DIREC`; the rest (`0x0D` from factory) is not touched |
+| `0x3A` | bit `0x40` = symmetry; bits `0x10`/`0x20` = direction (0 clockwise, 1 inverse, 2 two way, 3 magicalady) |
 | `0x3E` | high nibble = `LED_USER6_R`, low nibble = `LED_USER6_G` |
 | `0x3F` | high nibble = `LED_BRIGHT` (0–15); low nibble = `LED_USER6_B` |
 
-**The level is inverted.** The LED is active-low: the byte stores the channel's
-"darkness" and it lights with `15 − value`. The channel is in its place
-(`0x20` R, `0x21` G, `0x22` B and in the 7th colour `0x3E` high R, `0x3E` low G,
-`0x3F` low B); what is reversed is the level.
+### The fourteen effects and what each one writes
 
-Measured on the mouse, writing pure triples:
+The dropdown has **14** entries and its value is `LED_TYPE` in `config.ini` (0–13). The
+tool writes the high nibble of `0x1C` as `8 + (LED_TYPE mod 8)`, so the first eight names
+cover ids 8–15 — but the second group of names is *not* a duplicate: for `LED_TYPE` 8–11
+the tool also sets bit 7 of `0x33`, and that is a different animation. `Button response`
+(12) and `Mute` (13) both keep id 9 and encode themselves in the **cycle nibble**, the
+only place the tool writes a value outside 0–7.
+
+| entry | `LED_TYPE` | `0x1C` | `0x33` | controls the tool shows |
+|---|---|---|---|---|
+| Breathing | 0 | `8n` | `3F` | speed |
+| Cycle breath | 1 | `9n` | `3F` | speed, 7 colours + ticks |
+| Constantly | 2 | `An` | `3F` | brightness |
+| Flow water | 3 | `Bn` | `3F` | speed, brightness, colours, symmetry, 4 directions |
+| Single water | 4 | `Cn` | `3F` | speed, brightness, colours, symmetry, 3 directions |
+| Comet tail | 5 | `Dn` | `3F` | speed, brightness, colours, symmetry, 3 directions |
+| Neon | 6 | `En` | `3F` | speed |
+| Ambilight | 7 | `Fn` | `3F` | speed, symmetry, 2 directions |
+| Flicker | 8 | `8n` | `BF` | speed |
+| Star Trek | 9 | `9n` | `BF` | — |
+| Water | 10 | `An` | `BF` | speed, 2 directions |
+| enraptured | 11 | `Bn` | `BF` | speed |
+| Button response | 12 | `9C` | `3F` | one animation per button (§ below) |
+| Mute | 13 | `97` | `3F` | — |
+
+`n` = the cycle speed (0–7). The sixteen option combinations were measured one effect at a
+time and every control writes the same `config.ini` field whatever is on screen: the speed
+slider moves `LED_CYCTIME` **and** `LED_CYC_TIME`, the brightness slider moves
+`LED_BRIGHT`, the seven ticks move `CYC_7COL_EN`, symmetry moves `LED_FEATURE_SYMMETRY`
+and the direction radios move `LED_FEATURE_DIREC` (0/1/2/3 → `0x3A` bits 4–5). Nothing in
+the image is per-effect: the effect is the id, the options are the shared LED block.
+
+The vendor sliders do not use the whole nibble: dragging the **brightness** slider from its
+right end to its left end gives `LED_BRIGHT` 0 → 6 (0 is the factory value and it is the one
+that lights the mouse at full level), and the **speed** slider gives 0 → 5. The firmware
+field is a 4-bit nibble, so the configurator offers 0–15 and 0–7.
+
+**The level is inverted.** The LED is active-low: the byte stores the channel's
+"darkness" and lights with `15 − value`. The channel is in its place
+(`0x20` R, `0x21` G, `0x22` B and in the 7th colour `0x3E` high R, `0x3E` low G,
+`0x3F` low B); what is reversed is the level. Measured on the mouse, writing pure triples:
 
 | written | seen |
 |---|---|
@@ -386,84 +426,59 @@ Measured on the mouse, writing pure triples:
 | `(0,15,15)` | `(255,0,0)` red |
 | `(15,0,15)` | `(0,255,0)` green |
 
-So: to paint red you have to store `(0,15,15)`. The vendor `config.ini`
-does not apply that inversion when reading or writing, so its values
-are not the colour that comes out; the configurator does it in `web/core.js` (`lit()`), and
-the rest of the UI keeps talking about normal `{r,g,b}`.
+So: to paint red you have to store `(0,15,15)`. The vendor `config.ini` does not apply that
+inversion, so its values are not the colour that comes out; the configurator does it in
+`web/core.js` (`lit()`), and the rest of the UI keeps talking about normal `{r,g,b}`.
 
-Unconfirmed: whether the **brightness** (`0x3F` high) is inverted as well. With the brightness
-at 0 from factory the mouse lights up, so either it is not inverted or 0 means
+Unconfirmed: whether the **brightness** (`0x3F` high) is inverted as well. With the
+brightness at 0 from factory the mouse lights up, so either it is not inverted or 0 means
 "no attenuation"; the configurator writes it as is until we know.
 
-The channels are **4 bits (0–15)**, as in `config.ini`. Cross-checked
-colour by colour with the factory configuration: the seven `LED_USER*` and the six
-`DPI*` come out exactly as they are in the ini, `LED_BRIGHT=0` with the nibble at 0,
-`CYC_7COL_EN=127` with the seven bits set and `LED_TYPE=9` is the mode the
-tool calls **Star Trek**.
+The channels are **4 bits (0–15)**, as in `config.ini`. Cross-checked colour by colour with
+the factory configuration: the seven `LED_USER*` and the six `DPI*` come out exactly as
+they are in the ini, and `CYC_7COL_EN=127` with the seven bits set. Changing the brightness
+from 0 to 1 moves only `0x3F` (`0x00→0x10`), and from 0 to 7 puts it at `0x70`; changing a
+colour moves **only** its byte, in the nibble that corresponds to it.
 
-Changing the brightness from 0 to 1 moves only `0x3F` (`0x00→0x10`), and from 0 to 7 puts it
-at `0x70`; changing a colour moves **only** its byte, in the nibble that corresponds to it.
+**What the mouse does.** Watching the LED and writing each value of the high nibble on the
+factory image (`0x33 = 0xBF`, i.e. the *second* group): id 8 blinks nervously, 9 holds a
+fixed colour, 10 breathes but with its own colours, 11 chases like "Star Trek", and
+12–15 light nothing. That table is where "the vendor's names are fiction" came from in
+earlier versions of this document; now that ids 8–11 exist **twice**, the honest reading is
+that the names of the second group (Flicker, Star Trek, Water, enraptured) were measured and
+the first group was not, so the animations of `Breathing`…`Ambilight` (bank 0) and of the
+ids 12–15 are **not yet observed on hardware**. The Debug tab's byte probe is the way to
+close it.
 
-**Modes: the vendor dropdown does not describe the hardware.** Its list has
-14 entries, but picking each one and pressing Apply writes these bytes (measured twice:
-forcing `LED_TYPE` in the ini and picking the item in the UI with a held click —
-`tools/probe/led_names_ui.py`, results in
-`tools/probe/led_names_ui.json`):
+### Button response: one animation per button
 
-| dropdown entry | `0x1C` high |
-|---|---|
-| 1 Breathing | 8 |
-| 2 Cycle breath | 9 |
-| 3 Constantly | 10 |
-| 4 Flow water | 11 |
-| 5 Single water | 12 |
-| 6 Comet tail | 13 |
-| 7 Neon | 14 |
-| 8 Ambilight | 15 |
-| 9 Flicker | **8** |
-| 10 Star Trek | **9** |
-| 11 Water | **10** |
-| 12 enraptured | **11** |
-| 13 Button response | 9 (and it touches the cycle time) |
-| 14 Mute | 8 (and it touches the cycle time) |
+The four animations are the tool's own list — the strings are in its `.exe`:
+«1.Cycle breath 2.Flow water 3.Comet tail 4.Single water». They are not in the LED block:
+each button's **action byte** (`0x0008–0x000F`, `0x003B–0x003C`) carries them in its top
+bits, next to the action:
 
-So the dropdown repeats: "Flicker" and "Breathing" write the same, and likewise
-four pairs. The vendor names do **not** match what the mouse does.
+```
+bits 7-6   animation: 0 Cycle breath, 1 Flow water, 2 Comet tail, 3 Single water
+bit  5     react enabled (the ini's LED_REACT_EN; 1 in the factory image)
+bits 4-0   the action itself (0x21 = Left, 0x27 = Show Desktop, …)
+```
 
-**What the mouse does, watching the LED** (it cannot be read, so this is direct
-observation by writing each value of the high nibble):
+Measured one button at a time, `LED_REACT_TYPE<i>` = 1 → the byte grows by `0x40`
+(`tools/probe/react_map.py`, `react_sweep.py`):
 
-| `0x1C` high | what is seen |
-|---|---|
-| 8 | nervous blinking |
-| 9 | fixed colour, no animation |
-| 10 | breathing, but **with its own colours**: it ignores the ones that are set |
-| 11 | "Star Trek"-style sweep |
-| 12–15 | **does not light** |
-| 0–7 | not measured (probably off: bit `0x8` of the nibble seems to be "on") |
+| `LED_REACT_<i>` | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| byte | `0x08` | `0x0A` | `0x09` | `0x0C` | `0x0B` | `0x0D` | `0x3B` | `0x3C` | `0x0F` | `0x0E` | — | — |
 
-With that, the Lighting tab only offers 8–11 and the rest is shown as
-`no light (N)` or `unknown (N)` if the mouse already came that way. To sweep the values that
-are missing without touching the UI there is the **byte probe** of the Debug panel (it writes a byte into
-the image that will be sent with the next Apply).
+(index 0 = Left, 1 = Right, 2 = Middle, 3 = Forward, 4 = Backward, then the model's own
+buttons; 10 and 11 are written nowhere). `LED_REACT_EN<i> = 0` clears bit 5 of that same
+byte — `0x21` (Left) → `0x01` — which is what an "off" animation looks like, and the reason
+the configurator calls it out: it is the vendor's own encoding, and it is **not verified on
+hardware** whether the button keeps working with bit 5 clear.
 
-The **symmetry** (`0x3A & 0x40`) and **direction** (`0x3A & 0x10`) bits have not
-changed anything in any of the four effects that light up either: they stay in the UI marked
-as unconfirmed, and are preserved as the factory image had them (`0x0D`).
-
-The **cycle time** is in the low nibble of `0x1C` and is clamped to 0–7. The
-"Button response" and "Mute" entries are the only ones that touch it (12 and 7), so
-their complete behaviour is unclear: they could be reactive/off modes that
-this firmware does not implement the same way.
-
-**What does not reach the image** (sweep with no byte changed): `LED_CYC_TIME`
-(the cycle speed), `LED_USER_COLOR`, `LED_FEATURE_SCOLOR`, `LED_TYPE_SW_EN*`,
-`WHEEL_SPEED`, `DPI_SPEED` and the per-button `LED_REACT_*`. Either they live in the registers
-of `0x00A0–0x02CF`, or the firmware applies them without storing them.
-
-**Unresolved.** `0x33` changes when changing mode (`0xBF` with Star Trek, `0x3F`
-with Breathing) and we do not know what it is; the configurator does not touch it. `0x32–0x39` are
-at zero in the factory image. `LED_CYCTIME` has only been seen clamped (15→7).
+Because the animation shares the byte with the action, a write to one must not clobber the
+other: `web/core.js` preserves bits 7–6 when an action is written and bits 4–0 when the
+animation is.
 
 ### How the web configurator uses it
 
@@ -509,9 +524,10 @@ synthetic keys from `xdotool`; you have to use Insert → "Please enter the key"
 * Format of the **advanced action and macro registers** (`0x00A0–0x02CF`,
   `0x0400–0x04A7`): they are generated when picking actions ≥21 and contain the pointers of
   `0x006E`. Not deciphered.
-* Encoding of **LED colours** per stage, `LED_CYC_TIME`, `WHEEL_SPEED`,
-  `DPI_SPEED` (increments of 1 change no byte: either they are quantised or they live
-  in the registers).
+* Encoding of **LED colours** per stage, `WHEEL_SPEED` and `DPI_SPEED` (increments of
+  1 change no byte: either they are quantised or they live in the registers).
+  `LED_CYC_TIME` alone changes nothing either: the tool writes it **together with**
+  `LED_CYCTIME` and the image takes the second (`0x1C`, low nibble).
 * Semantics of multi-byte reading (index as offset).
 * Whether `0x0080–0x009F` is unused profile 3/4 storage.
 
@@ -527,6 +543,13 @@ docker exec g6re-run bash /work/tools/probe/probe.sh baseline
 
 # change one field and see which bytes change
 python3 tools/probe/sweep.py Config0.K0 ShareData.DPI_SET0
+
+# drive the vendor UI: one Apply per case, plus the config.ini it saved
+python3 tools/probe/led_cases.py tools/probe/cases_fw.json
+# screenshot + full image for every entry of the lighting dropdown
+python3 tools/probe/led_capture.py
+# per-button "button response": which byte each LED_REACT_TYPE moves
+python3 tools/probe/react_map.py
 
 # rebuild the memory the program wrote
 python3 tools/probe/parse_log.py tools/probe/baseline.log --mem

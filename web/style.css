@@ -137,6 +137,17 @@ tr.hasmedia .num-badge, .diagram .hot.media .num-badge { border-color: var(--ok)
 .ch input[type="range"] { width: 190px; accent-color: var(--acc); }
 .ch input[type="checkbox"] { accent-color: var(--acc); }
 input[type="range"] { accent-color: var(--acc); }
+/* opciones del efecto: el fabricante muestra unas u otras según cuál elijas */
+.led-opt { display: inline-flex; align-items: center; gap: 8px; margin-right: 18px; }
+.led-opt[hidden], .led-dirs .ch[hidden] { display: none; }
+.led-opt > .mono { color: var(--dim); }
+.led-opt input[type="range"] { width: 150px; }
+.led-num { min-width: 16px; text-align: right; font-variant-numeric: tabular-nums; color: var(--fg); }
+.led-dirs { display: inline-flex; gap: 14px; flex-wrap: wrap; }
+/* una fila por botón en "button response" */
+.led-react { display: grid; gap: 6px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 6px; }
+.led-react .led-row { grid-template-columns: 1fr 190px; }
+
 /* un modo que el firmware no conoce (id fuera de 8–15) */
 #ledMode.unknown { border-color: #b6802a; color: #e0b060; }
 
@@ -163,7 +174,9 @@ input[type="range"] { accent-color: var(--acc); }
   content: "stored"; color: var(--dim); margin-right: 6px; letter-spacing: 0;
 }
 @media (max-width: 720px) {
-  .led-row { grid-template-columns: 46px 1fr auto; row-gap: 6px; }
+  /* una sola columna: los 390px del grid no caben en un móvil */
+  .led-colours, .led-react { grid-template-columns: 1fr; }
+  .led-row, .led-react .led-row { grid-template-columns: 40px 1fr auto; row-gap: 6px; }
   .led-val::before { content: none; }     /* el prefijo "stored" no cabe */
 }
 

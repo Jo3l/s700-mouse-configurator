@@ -358,112 +358,129 @@ El editor de macros admite además pasos de tipo XY (movimiento), CPI (cambio de
 DPI), LED y retardos, y opciones de repetición («Run Until release», «Run Until
 Click», «Repeat On = N»).
 
-## 5-quater. LED: el bloque de luces está descifrado
+## 5-quater. LED: los catorce efectos, medidos uno a uno
 
-Medido con el arnés de Wine: se cambia **un** campo del `config.ini` que la
-herramienta carga, se ejecuta, y se compara la imagen que escribe con la base
-(`tools/probe/led_sweep.py`, resultados en `tools/probe/led_map.json`).
+Medido conduciendo la herramienta del fabricante bajo Wine: se elige un efecto (o se mueve
+uno de sus controles) en su UI, se pulsa Apply y se lee la imagen que escribe. Además la
+herramienta deja guardado el `config.ini` que aplicó, que nombra cada campo que movió.
+Instrumentos: `tools/probe/led_capture.py` (foto + imagen completa por cada entrada del
+desplegable), `tools/probe/led_cases.py` (una lista de acciones de UI, un Apply por cada
+una) y `tools/probe/led_sweep.py` (un campo del `config.ini` cada vez).
 
 | byte | contenido |
 |---|---|
-| `0x1C` | nibble alto = `LED_TYPE` (efecto); bajo = `LED_CYCTIME` (se recorta a 0–7) |
+| `0x1C` | nibble alto = id del efecto; bajo = velocidad del ciclo (`LED_CYCTIME`, 0–7) |
+| `0x33` | bit `0x80` = el **segundo grupo de nombres** del fabricante; los bits bajos (`0x3F`) se quedan como estaban |
 | `0x1D` | `0x80 \| CYC_7COL_EN`: un bit por color, los que entran en el ciclo |
-| `0x20–0x31` | **seis pares**: nibble alto = `LED_USER0…5` (color de usuario), bajo = `DPI0…5` (color de la etapa) |
-| `0x3A` | bit `0x40` = `LED_FEATURE_SYMMETRY`, bit `0x10` = `LED_FEATURE_DIREC`; el resto (`0x0D` de fábrica) no se toca |
-| `0x3E` | nibble alto = `LED_USER6_R`, nibble bajo = `LED_USER6_G` |
-| `0x3F` | nibble alto = `LED_BRIGHT` (0–15); nibble bajo = `LED_USER6_B` |
+| `0x20–0x31` | **seis pares**: nibble alto = `LED_USER0…5` (color de usuario), bajo = `DPI0…5` (color de etapa) |
+| `0x3A` | bit `0x40` = simetría; bits `0x10`/`0x20` = dirección (0 clockwise, 1 inverse, 2 two way, 3 magicalady) |
+| `0x3E` | nibble alto = `LED_USER6_R`, bajo = `LED_USER6_G` |
+| `0x3F` | nibble alto = `LED_BRIGHT` (0–15); bajo = `LED_USER6_B` |
 
-**El nivel va invertido.** El LED es activo a nivel bajo: el byte guarda la
-"oscuridad" del canal y enciende con `15 − valor`. El canal sí está en su sitio
-(`0x20` R, `0x21` G, `0x22` B y en el 7º color `0x3E` alto R, `0x3E` bajo G,
-`0x3F` bajo B); lo que está al revés es el nivel.
+### Los catorce efectos y lo que escribe cada uno
 
-Medido en el ratón, escribiendo tríos puros:
+El desplegable tiene **14** entradas y su valor es `LED_TYPE` del `config.ini` (0–13). La
+herramienta escribe el nibble alto de `0x1C` como `8 + (LED_TYPE mod 8)`, así que los ocho
+primeros nombres cubren los ids 8–15 — pero el segundo grupo de nombres **no** es un
+duplicado: con `LED_TYPE` 8–11 la herramienta pone además el bit 7 de `0x33`, y eso es otra
+animación. `Button response` (12) y `Mute` (13) conservan el id 9 y se codifican en el
+**nibble del ciclo**, el único sitio donde la herramienta escribe fuera de 0–7.
 
-| se escribe | se ve |
+| entrada | `LED_TYPE` | `0x1C` | `0x33` | controles que enseña |
+|---|---|---|---|---|
+| Breathing | 0 | `8n` | `3F` | velocidad |
+| Cycle breath | 1 | `9n` | `3F` | velocidad, 7 colores + casillas |
+| Constantly | 2 | `An` | `3F` | brillo |
+| Flow water | 3 | `Bn` | `3F` | velocidad, brillo, colores, simetría, 4 direcciones |
+| Single water | 4 | `Cn` | `3F` | velocidad, brillo, colores, simetría, 3 direcciones |
+| Comet tail | 5 | `Dn` | `3F` | velocidad, brillo, colores, simetría, 3 direcciones |
+| Neon | 6 | `En` | `3F` | velocidad |
+| Ambilight | 7 | `Fn` | `3F` | velocidad, simetría, 2 direcciones |
+| Flicker | 8 | `8n` | `BF` | velocidad |
+| Star Trek | 9 | `9n` | `BF` | — |
+| Water | 10 | `An` | `BF` | velocidad, 2 direcciones |
+| enraptured | 11 | `Bn` | `BF` | velocidad |
+| Button response | 12 | `9C` | `3F` | una animación por botón (abajo) |
+| Mute | 13 | `97` | `3F` | — |
+
+`n` = la velocidad del ciclo (0–7). Las dieciséis combinaciones de opciones se midieron
+efecto por efecto y todos los controles escriben el mismo campo del `config.ini` dé igual
+cuál esté en pantalla: el slider de velocidad mueve `LED_CYCTIME` **y** `LED_CYC_TIME`, el
+de brillo mueve `LED_BRIGHT`, las siete casillas mueven `CYC_7COL_EN`, la simetría mueve
+`LED_FEATURE_SYMMETRY` y los radios de dirección mueven `LED_FEATURE_DIREC` (0/1/2/3 → bits
+4–5 de `0x3A`). En la imagen no hay nada por efecto: el efecto es el id y las opciones son
+el bloque LED compartido.
+
+Los sliders del fabricante no usan el nibble entero: llevando el de **brillo** de su extremo
+derecho al izquierdo sale `LED_BRIGHT` 0 → 6 (0 es el valor de fábrica y el que enciende el
+ratón a tope), y el de **velocidad** da 0 → 5. El campo del firmware es un nibble de 4 bits,
+así que el configurador ofrece 0–15 y 0–7.
+
+**El nivel está invertido.** El LED es activo a nivel bajo: el byte guarda la "oscuridad"
+del canal y enciende con `15 − valor`. El canal sí está en su sitio (`0x20` R, `0x21` G,
+`0x22` B y en el 7º color `0x3E` alto R, `0x3E` bajo G, `0x3F` bajo B); lo que va al revés es
+el nivel. Medido en el ratón, escribiendo ternas puras:
+
+| escrito | visto |
 |---|---|
 | `(15,0,0)` | `(0,255,255)` cian |
 | `(0,15,15)` | `(255,0,0)` rojo |
 | `(15,0,15)` | `(0,255,0)` verde |
 
-O sea: para pintar rojo hay que guardar `(0,15,15)`. El `config.ini` del
-fabricante no aplica esa inversión al leer ni al escribir, así que sus valores
-no son el color que sale; el configurador la hace en `web/core.js` (`lit()`), y
-el resto de la UI sigue hablando de `{r,g,b}` normales.
+O sea: para pintar rojo hay que guardar `(0,15,15)`. El `config.ini` del fabricante no
+aplica esa inversión, así que sus valores no son el color que sale; el configurador la hace
+en `web/core.js` (`lit()`) y el resto de la UI sigue hablando de `{r,g,b}` normales.
 
-Sin confirmar: si el **brillo** (`0x3F` alto) va invertido también. Con el brillo
-a 0 de fábrica el ratón se enciende, así que o no va invertido o 0 significa
-"sin atenuar"; el configurador lo escribe tal cual hasta saberlo.
+Sin confirmar: si el **brillo** (`0x3F` alto) va invertido también. Con el brillo a 0 de
+fábrica el ratón enciende, así que o no va invertido o 0 significa "sin atenuar"; el
+configurador lo escribe tal cual hasta saberlo.
 
-Los canales son de **4 bits (0–15)**, igual que en el `config.ini`. Contrastado
-color a color con la configuración de fábrica: los siete `LED_USER*` y los seis
-`DPI*` salen exactamente como están en el ini, `LED_BRIGHT=0` con el nibble a 0,
-`CYC_7COL_EN=127` con los siete bits puestos y `LED_TYPE=9` es el modo que la
-herramienta llama **Star Trek**.
+Los canales son de **4 bits (0–15)**, como en el `config.ini`. Contrastado color por color
+con la configuración de fábrica: los siete `LED_USER*` y los seis `DPI*` salen exactamente
+como están en el ini, y `CYC_7COL_EN=127` con los siete bits puestos. Cambiar el brillo de 0
+a 1 mueve sólo `0x3F` (`0x00→0x10`), y de 0 a 7 lo deja en `0x70`; cambiar un color mueve
+**sólo** su byte, en el nibble que le toca.
 
-Cambiar el brillo de 0 a 1 mueve sólo `0x3F` (`0x00→0x10`), y de 0 a 7 lo pone
-en `0x70`; cambiar un color mueve **sólo** su byte, en el nibble que le toca.
+**Qué hace el ratón.** Mirando el LED y escribiendo cada valor del nibble alto sobre la
+imagen de fábrica (`0x33 = 0xBF`, o sea el *segundo* grupo): el id 8 parpadea nervioso, el 9
+se queda en color fijo, el 10 respira pero con colores propios, el 11 recorre tipo "Star
+Trek" y los ids 12–15 no encienden nada. De ahí venía el «los nombres del fabricante son
+ficción» de versiones anteriores de este documento; ahora que los ids 8–11 existen **dos
+veces**, la lectura honesta es que se midieron los nombres del segundo grupo (Flicker, Star
+Trek, Water, enraptured) y el primero no, así que las animaciones de `Breathing`…`Ambilight`
+(banco 0) y las de los ids 12–15 están **sin observar en hardware**. La sonda de bytes del
+panel Debug es la forma de cerrarlo.
 
-**Modos: el desplegable del fabricante no describe el hardware.** Su lista tiene
-14 entradas, pero al elegir cada una y pulsar Apply escribe estos bytes (medido dos
-veces: forzando `LED_TYPE` en el ini y eligiendo el elemento en la UI con clic
-sostenido — `tools/probe/led_names_ui.py`, resultados en
-`tools/probe/led_names_ui.json`):
+### Button response: una animación por botón
 
-| entrada del desplegable | `0x1C` alto |
-|---|---|
-| 1 Breathing | 8 |
-| 2 Cycle breath | 9 |
-| 3 Constantly | 10 |
-| 4 Flow water | 11 |
-| 5 Single water | 12 |
-| 6 Comet tail | 13 |
-| 7 Neon | 14 |
-| 8 Ambilight | 15 |
-| 9 Flicker | **8** |
-| 10 Star Trek | **9** |
-| 11 Water | **10** |
-| 12 enraptured | **11** |
-| 13 Button response | 9 (y toca el tiempo de ciclo) |
-| 14 Mute | 8 (y toca el tiempo de ciclo) |
+Las cuatro animaciones son la lista de la propia herramienta — las cadenas están en su
+`.exe`: «1.Cycle breath 2.Flow water 3.Comet tail 4.Single water». No van en el bloque LED:
+el **byte de acción** de cada botón (`0x0008–0x000F`, `0x003B–0x003C`) las lleva en sus bits
+altos, junto a la acción:
 
-O sea que el desplegable repite: "Flicker" y "Breathing" escriben lo mismo, y así
-cuatro pares. Los nombres del fabricante **no** coinciden con lo que hace el ratón.
+```
+bits 7-6   animación: 0 Cycle breath, 1 Flow water, 2 Comet tail, 3 Single water
+bit  5     react activado (el LED_REACT_EN del ini; 1 en la imagen de fábrica)
+bits 4-0   la acción (0x21 = Left, 0x27 = Show Desktop, …)
+```
 
-**Lo que hace el ratón, mirando el LED** (no se puede leer, así que es observación
-directa escribiendo cada valor del nibble alto):
+Medido botón a botón, `LED_REACT_TYPE<i>` = 1 → el byte sube `0x40`
+(`tools/probe/react_map.py`, `react_sweep.py`):
 
-| `0x1C` alto | qué se ve |
-|---|---|
-| 8 | parpadeo nervioso |
-| 9 | color fijo, sin animación |
-| 10 | respiración, pero **con colores propios**: ignora los que están puestos |
-| 11 | recorrido tipo "Star Trek" |
-| 12–15 | **no enciende** |
-| 0–7 | sin medir (probablemente apagado: el bit `0x8` del nibble parece el "encendido") |
+| `LED_REACT_<i>` | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| byte | `0x08` | `0x0A` | `0x09` | `0x0C` | `0x0B` | `0x0D` | `0x3B` | `0x3C` | `0x0F` | `0x0E` | — | — |
 
-Con eso, la pestaña Lighting sólo ofrece 8–11 y el resto se muestra como
-`no light (N)` o `unknown (N)` si el ratón ya venía así. Para barrer los valores que
-faltan sin tocar la UI está la **sonda de bytes** del panel Debug (escribe un byte en
-la imagen que se enviará con el siguiente Apply).
+(índice 0 = Left, 1 = Right, 2 = Middle, 3 = Forward, 4 = Backward, y luego los botones
+propios del modelo; 10 y 11 no se escriben en ningún sitio).
+`LED_REACT_EN<i> = 0` borra el bit 5 de ese mismo byte — `0x21` (Left) → `0x01` —, que es el
+aspecto de una animación "apagada", y por eso el configurador lo avisa: es la codificación
+del propio fabricante y está **sin verificar en hardware** que el botón siga funcionando con
+el bit 5 a cero.
 
-Los bits de **simetría** (`0x3A & 0x40`) y **dirección** (`0x3A & 0x10`) tampoco han
-cambiado nada en ninguno de los cuatro efectos que encienden: siguen en la UI marcados
-como sin confirmar, y se conservan como los tenía la imagen de fábrica (`0x0D`).
-
-El **tiempo de ciclo** está en el nibble bajo de `0x1C` y se recorta a 0–7. Las
-entradas "Button response" y "Mute" son las únicas que lo tocan (12 y 7), así que
-su comportamiento completo no está claro: podrían ser modos reactivo/apagado que
-este firmware no implementa igual.
-
-**Lo que no llega a la imagen** (barrido sin ningún byte cambiado): `LED_CYC_TIME`
-(la velocidad del ciclo), `LED_USER_COLOR`, `LED_FEATURE_SCOLOR`, `LED_TYPE_SW_EN*`,
-`WHEEL_SPEED`, `DPI_SPEED` y los `LED_REACT_*` por botón. O viven en los registros
-de `0x00A0–0x02CF`, o los aplica el firmware sin guardarlos.
-
-**Sin resolver.** `0x33` cambia al cambiar de modo (`0xBF` con Star Trek, `0x3F`
-con Breathing) y no sabemos qué es; el configurador no lo toca. `0x32–0x39` están
-a cero en la imagen de fábrica. `LED_CYCTIME` sólo se ha visto recortado (15→7).
+Como la animación comparte byte con la acción, escribir una no puede pisar la otra:
+`web/core.js` conserva los bits 7–6 cuando se escribe una acción y los bits 4–0 cuando se
+escribe la animación.
 
 ### Cómo lo usa el configurador web
 
@@ -509,9 +526,10 @@ teclas sintéticas de `xdotool`; hay que usar Insert → «Please enter the key�
 * Formato de los **registros de acciones avanzadas y macros** (`0x00A0–0x02CF`,
   `0x0400–0x04A7`): se generan al elegir acciones ≥21 y contienen los punteros de
   `0x006E`. Sin descifrar.
-* Codificación de **colores LED** por etapa, `LED_CYC_TIME`, `WHEEL_SPEED`,
-  `DPI_SPEED` (los incrementos de 1 no cambian ningún byte: o se cuantizan o viven
-  en los registros).
+* Codificación de **colores LED** por etapa, `WHEEL_SPEED` y `DPI_SPEED` (los
+  incrementos de 1 no cambian ningún byte: o se cuantizan o viven en los registros).
+  `LED_CYC_TIME` por sí solo tampoco cambia nada: la herramienta lo escribe **junto a**
+  `LED_CYCTIME` y la imagen se queda con el segundo (`0x1C`, nibble bajo).
 * Semántica de lectura multi-byte (índice como desplazamiento).
 * Si `0x0080–0x009F` es almacenamiento de perfiles 3/4 sin usar.
 
@@ -527,6 +545,13 @@ docker exec g6re-run bash /work/tools/probe/probe.sh baseline
 
 # cambiar un campo y ver qué bytes cambian
 python3 tools/probe/sweep.py Config0.K0 ShareData.DPI_SET0
+
+# conducir la UI del fabricante: un Apply por caso y el config.ini que guardó
+python3 tools/probe/led_cases.py tools/probe/cases_fw.json
+# foto + imagen completa por cada entrada del desplegable de luces
+python3 tools/probe/led_capture.py
+# "button response" por botón: qué byte mueve cada LED_REACT_TYPE
+python3 tools/probe/react_map.py
 
 # recomponer la memoria que el programa escribió
 python3 tools/probe/parse_log.py tools/probe/baseline.log --mem

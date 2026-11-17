@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import * as g6 from "../web/g6.js";
 import { readConfig, readLed, planWrites, applyEdits, applyLed, settingsForCode, DPI_CHOICES, MEDIA_CHOICES } from "../web/core.js";
-import { LED_MODES, LED_MODE_IDS, LED_MODE_DARK } from "../web/g6.js";
+import { LED_EFFECTS, LED_DIRECTIONS, LED_REACT_NAMES } from "../web/g6.js";
 import { MEDIA_SLOT, MEDIA } from "../web/g6.js";
 
 const frames = [];
@@ -198,20 +198,62 @@ check("macro no se ofrece como opción editable", mb.action === null);
   })());
 }
 
-// --- LED: bloque 0x20–0x3F contrastado con el config.ini del fabricante ------
+// --- LED: bloque 0x1C–0x3F contrastado con el config.ini del fabricante ------
 {
   const hx = (a, from, n) => [...a.slice(from, from + n)].map(b => b.toString(16).padStart(2, "0")).join(" ");
-  const led = readConfig(mem).led;
   const DJ = v => JSON.stringify(v);
-  check("led: modo 9 = Steady (color fijo)", led.mode === 9 && led.modeName === "Steady (no animation)", String(led.modeName));
-  check("led: sólo encienden los ids 8–11", DJ([...LED_MODE_IDS]) === DJ([8, 9, 10, 11]) &&
-    [...LED_MODE_IDS].every(id => typeof LED_MODES[id] === "string"), DJ([...LED_MODE_IDS]));
-  check("led: 12–15 se nombran como apagados", LED_MODE_DARK.length === 4 &&
-    readLed((() => { const p = Uint8Array.from(mem); p[0x1c] = 0xc4; return p; })()).modeName === "no light (12)",
-    readLed((() => { const p = Uint8Array.from(mem); p[0x1c] = 0xc4; return p; })()).modeName);
-  check("led: un valor no medido (3) se nombra como desconocido", readLed(
-    (() => { const p = Uint8Array.from(mem); p[0x1c] = 0x34; return p; })()).modeName === "unknown (3)");
+  const led = readConfig(mem).led;
+  const imgOf = patch => applyEdits(Uint8Array.from(mem), { led: patch });
+
+  const NAMES = ["Breathing", "Cycle breath", "Constantly", "Flow water", "Single water", "Comet tail",
+    "Neon", "Ambilight", "Flicker", "Star Trek", "Water", "enraptured", "Button response", "Mute"];
+  check("led: los 14 efectos del desplegable, en su orden", DJ(LED_EFFECTS.map(e => e.name)) === DJ(NAMES),
+    DJ(LED_EFFECTS.map(e => e.name)));
+  check("led: cada efecto trae id, banco y opciones",
+    LED_EFFECTS.length === 14 && LED_EFFECTS.every(e => typeof e.mode === "number" &&
+      (e.bank === 0 || e.bank === 1) && Array.isArray(e.opts)));
+  check("led: las opciones son las que enseña el fabricante", (() => {
+    const o = n => LED_EFFECTS.find(e => e.name === n).opts.join(",");
+    return o("Constantly") === "bright" && o("Star Trek") === "" && o("Mute") === "" &&
+      o("Cycle breath") === "speed,colours" && o("Button response") === "react" &&
+      o("Flow water") === "speed,bright,colours,symmetry,dir4" && o("Ambilight") === "speed,symmetry,dir2" &&
+      o("Single water") === "speed,bright,colours,symmetry,dir3";
+  })());
+
+  // la fábrica: 0x1C = 0x94 (id 9, ciclo 4) y 0x33 = 0xBF (bit 7 = segunda tanda)
+  check("led: de fábrica, id 9 + banco 2 = Star Trek (LED_TYPE 9)",
+    led.raw === 0x94 && led.bank === 1 && led.cyc === 4 && led.effect === 9 && led.effectName === "Star Trek",
+    DJ([led.raw, led.bank, led.effect, led.effectName]));
   check("led: brillo 0 como LED_BRIGHT", led.brightness === 0);
+  check("led: CYC_7COL_EN=127 cabe en los 7 bits de 0x1D", led.mask === 127);
+  check("led: simetría apagada y dirección 0", !led.symmetry && led.direction === 0);
+
+  // el id del nibble es 8 + (índice mod 8); el banco lo pone la segunda tanda;
+  // Button response y Mute dejan el ciclo fijo en 0xC y 0x7
+  const want1c = e => ((e.mode << 4) | (e.cyc !== undefined ? e.cyc : 4)) & 0xff;
+  check("led: cada efecto manda su modo y su ciclo a 0x1C",
+    LED_EFFECTS.every(e => imgOf({ effect: e.ini, speed: 4 })[0x1c] === want1c(e)),
+    DJ(LED_EFFECTS.map(e => [e.name, imgOf({ effect: e.ini, speed: 4 })[0x1c].toString(16)])));
+  check("led: el banco va en el bit 7 de 0x33 y el resto del byte no se toca",
+    LED_EFFECTS.every(e => {
+      const img = imgOf({ effect: e.ini, speed: 4 });
+      return ((img[0x33] & 0x80) ? 1 : 0) === e.bank && (img[0x33] & 0x7f) === (mem[0x33] & 0x7f);
+    }));
+  check("led: Button response (0x9C) y Mute (0x97) ignoran el slider de velocidad", (() => {
+    const a = imgOf({ effect: 12, speed: 3 }), b = imgOf({ effect: 13, speed: 3 });
+    return a[0x1c] === 0x9c && b[0x1c] === 0x97;
+  })());
+  check("led: los 14 efectos se leen de vuelta", LED_EFFECTS.every(e => readLed(imgOf({ effect: e.ini, speed: 5 })).effect === e.ini),
+    DJ(LED_EFFECTS.map(e => [e.name, readLed(imgOf({ effect: e.ini, speed: 5 })).effect])));
+  check("led: un id que el firmware no conoce se marca como tal", (() => {
+    const probe = Uint8Array.from(mem);
+    probe[0x1c] = 0x34; probe[0x33] = mem[0x33] & 0x7f;      // id 3, banco 1
+    const other = Uint8Array.from(mem);
+    other[0x1c] = 0x34;                                       // id 3, banco 2 (el de fábrica)
+    return readLed(probe).effect === null && readLed(probe).effectName === "unknown (id 3)" &&
+      readLed(other).effectName === "unknown (id 3, bank 2)";
+  })());
+
   // El config.ini del fabricante, con el nivel invertido: el byte guarda la
   // "oscuridad" (el LED enciende con 15 - v), comprobado en hardware.
   const inv = c => ({ r: 15 - c.r, g: 15 - c.g, b: 15 - c.b });
@@ -221,36 +263,35 @@ check("macro no se ofrece como opción editable", mb.action === null);
   check("led: los 6 colores de etapa de DPI del config.ini (nivel invertido)", DJ(led.dpi) === DJ([
     { r: 0, g: 15, b: 0 }, { r: 15, g: 15, b: 0 }, { r: 0, g: 15, b: 0 },
     { r: 15, g: 0, b: 15 }, { r: 0, g: 15, b: 15 }, { r: 15, g: 0, b: 0 }].map(inv)), DJ(led.dpi));
-  check("led: CYC_7COL_EN=127 cabe en los 7 bits de 0x1D", led.cycle === 127);
-  check("led: simetría y dirección apagadas", !led.symmetry && !led.direction);
 
   const want = {
-    mode: 11, brightness: 7, cycle: 1, symmetry: true, direction: true,
+    effect: 3, speed: 6, brightness: 7, mask: 1, symmetry: true, direction: 3,
     user: [...led.user.slice(0, 6), { r: 15, g: 0, b: 15 }], dpi: led.dpi,
   };
-  const img = applyEdits(Uint8Array.from(mem), { led: want });
+  const img = imgOf(want);
+  check("led: Flow water va al nibble alto de 0x1C y la velocidad al bajo", img[0x1c] === 0xb6, hx(img, 0x1c, 1));
   check("led: el brillo va al nibble alto de 0x3F", img[0x3f] === 0x70, hx(img, 0x3f, 1));
-  check("led: el modo va al nibble alto de 0x1C (id 11) y el bajo no se toca",
-    img[0x1c] === ((11 << 4) | (mem[0x1c] & 0x0f)), hx(img, 0x1c, 1));
   check("led: la máscara del ciclo respeta el bit alto de 0x1D", img[0x1d] === 0x81, hx(img, 0x1d, 1));
-  check("led: simetría y dirección son bits de 0x3A", img[0x3a] === (mem[0x3a] | 0x50), hx(img, 0x3a, 1));
+  check("led: simetría es el bit 6 de 0x3A y la dirección los bits 4–5",
+    img[0x3a] === ((mem[0x3a] & ~0x30) | 0x40 | 0x30), hx(img, 0x3a, 1));
+  check("led: la dirección va de 0 a 3 y se lee de vuelta",
+    LED_DIRECTIONS.length === 4 && [0, 1, 2, 3].every(d =>
+      readLed(imgOf({ direction: d })).direction === d && (imgOf({ direction: d })[0x3a] & 0x30) === (d << 4)));
   check("led: el color 7 usa 0x3E y el nibble bajo de 0x3F", img[0x3e] === 0x0f && (img[0x3f] & 0x0f) === 0x00,
     hx(img, 0x3e, 2));
-  const tailRed = applyEdits(Uint8Array.from(mem), { led: { user: [...led.user.slice(0, 6), { r: 15, g: 3, b: 0 }] } });
+  const tailRed = imgOf({ user: [...led.user.slice(0, 6), { r: 15, g: 3, b: 0 }] });
   check("led: en el color 7 el nivel invertido reparte R (0), G (12) y B (15)",
     tailRed[0x3e] >> 4 === 0 && (tailRed[0x3e] & 0x0f) === 12 && (tailRed[0x3f] & 0x0f) === 15, hx(tailRed, 0x3e, 2));
   check("led: los colores pareados no pisan el canal de DPI", (img[0x20] >> 4) === 0 && (img[0x20] & 0x0f) === 0);
 
-  // nivel invertido a pelo: rojo puro se guarda como 0 en su byte y 15 en los otros
-  const red = applyEdits(Uint8Array.from(mem), { led: { user: [{ r: 15, g: 0, b: 0 }, ...led.user.slice(1)] } });
+  const red = imgOf({ user: [{ r: 15, g: 0, b: 0 }, ...led.user.slice(1)] });
   check("led: pedir rojo guarda 0 en 0x20 y 15 en 0x21/0x22 (nivel invertido)",
     red[0x20] >> 4 === 0 && red[0x21] >> 4 === 15 && red[0x22] >> 4 === 15, hx(red, 0x20, 3));
-  const blue = applyEdits(Uint8Array.from(mem), { led: { user: [{ r: 0, g: 0, b: 15 }, ...led.user.slice(1)] } });
+  const blue = imgOf({ user: [{ r: 0, g: 0, b: 15 }, ...led.user.slice(1)] });
   check("led: pedir azul guarda 15 en 0x20/0x21 y 0 en 0x22",
     blue[0x20] >> 4 === 15 && blue[0x21] >> 4 === 15 && blue[0x22] >> 4 === 0, hx(blue, 0x20, 3));
-  const green = applyEdits(Uint8Array.from(mem), { led: { user: [{ r: 0, g: 15, b: 0 }, ...led.user.slice(1)] } });
+  const green = imgOf({ user: [{ r: 0, g: 15, b: 0 }, ...led.user.slice(1)] });
   check("led: pedir verde guarda 0 en el canal del medio", green[0x21] >> 4 === 0 && green[0x20] >> 4 === 15, hx(green, 0x20, 3));
-  // y leer lo que hay guardado devuelve el color que se ve, no el byte
   check("led: el rojo guardado se lee como rojo", (() => {
     const probe = Uint8Array.from(mem);
     probe[0x20] = 0; probe[0x21] = 0xff; probe[0x22] = 0xff;   // 0,15,15 guardado
@@ -258,9 +299,33 @@ check("macro no se ofrece como opción editable", mb.action === null);
   })());
   const back2 = readConfig(img).led;   // mismo orden de claves que devuelve readLed
   check("led: ida y vuelta por applyEdits",
-    back2.mode === want.mode && back2.modeName === "Chase" && back2.brightness === want.brightness &&
-    back2.cycle === want.cycle && back2.symmetry === want.symmetry && back2.direction === want.direction &&
+    back2.effect === want.effect && back2.speed === want.speed && back2.brightness === want.brightness &&
+    back2.mask === want.mask && back2.symmetry === want.symmetry && back2.direction === want.direction &&
     DJ(back2.user) === DJ(want.user) && DJ(back2.dpi) === DJ(want.dpi), DJ(back2));
+
+  // "button response": la animación de cada botón en los bits 7–6 de su byte de
+  // acción (0x08–0x0F y 0x3B–0x3C), con el bit 5 de activado
+  const ADDRS = [0x08, 0x0a, 0x09, 0x0c, 0x0b, 0x0d, 0x3b, 0x3c, 0x0f, 0x0e];
+  const reactAll = (type, on) => readLed(mem).react.map(r => ({ ...r, type, on }));
+  check("led: la lista del button response es la del .exe",
+    DJ(LED_REACT_NAMES) === DJ(["Cycle breath", "Flow water", "Comet tail", "Single water"]));
+  check("led: las 10 animaciones caen en los 10 bytes de acción",
+    ADDRS.every((a, i) => {
+      const out = applyEdits(Uint8Array.from(mem), { led: { react: readLed(mem).react.map(r => (r.i === i ? { ...r, type: 2, on: true } : r)) } });
+      return (out[a] & 0xc0) === 0x80 && (out[a] & 0x1f) === (mem[a] & 0x1f);
+    }));
+  check("led: la animación se lee de vuelta por botón",
+    (() => { const o = readLed(applyEdits(Uint8Array.from(mem), { led: { react: reactAll(1, true) } })); return o.react.every(r => r.on && r.type === 1); })());
+  check("led: 'off' borra los bits 7–6 y el bit de activado (como el fabricante)",
+    (() => {
+      const out = applyEdits(Uint8Array.from(mem), { led: { react: reactAll(0, false) } });
+      return out[0x08] === 0x01 && readLed(out).react.every(r => !r.on);
+    })());
+  check("led: cambiar la acción de un botón no pisa su animación", (() => {
+    const base = applyEdits(Uint8Array.from(mem), { led: { react: reactAll(1, true) } });
+    const out = applyEdits(base, { buttons: { 0: "12" } });   // Show Desktop = 0x27
+    return out[0x08] === 0x67;
+  })());
 
   // una sola edición de brillo no debe tocar ni un byte más
   const only = applyEdits(Uint8Array.from(mem), { led: { brightness: 9 } });

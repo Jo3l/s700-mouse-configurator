@@ -45,7 +45,7 @@ everything byte for byte against what the vendor tool writes.
 |---|---|
 | **Buttons** | all 10 (left, right, wheel, side, wheel tilt, DPI button) → 20 actions: mouse button, key, media key, macro, DPI loop, LED loop, autofire, shortcuts |
 | **DPI** | 6 stages, up to 6 different LED colours, one per stage |
-| **Lighting** | the 4 effects the firmware actually has (ids 8–11), brightness, 7 user colours, 6 per-stage colours and the cycle mask |
+| **Lighting** | the vendor tool's **14 effects**, each with the controls it really shows (speed, brightness, 7 colours + cycle ticks, symmetry, up to 4 directions), 6 per-stage colours (independent of the effect), and **one animation per button** for *Button response* |
 | **Macros** | name + steps (key and delay), up to 16 steps in memory, assignable to a button |
 | **Profiles** | 4 button profiles, active one switchable from a button |
 | **Backup** | export/import the whole configuration as JSON; the factory image ships with the tool |
@@ -133,12 +133,15 @@ kernel node once (udev rule included); nothing can talk to the mouse without it.
 from the firmware. Still, **back up first** (*Backup* tab) and keep the vendor tool
 around; writing a known configuration back always recovers it.
 
-**Why only 4 lighting effects when the vendor tool lists 14?** Because the firmware
-implements four (ids 8–11) and the vendor list is generic: it repeats names and points
-them at ids that do not exist. Measured entry by entry, then watched on the mouse: 8
-flickers, 9 holds a fixed colour, 10 breathes (with its own colours) and 11 walks the
-strip; 12–15 light nothing. The vendor labels do not describe the hardware
-(`docs/PROTOCOL.md` §5-quater).
+**Do all 14 lighting effects exist?** Yes, and the tool's list is honest after all. Driven
+entry by entry, it writes 14 different settings: ids 8–15 for the first eight names, the
+same ids 8–11 again but with bit 7 of `0x33` set for the second group (Flicker, Star Trek,
+Water, enraptured), id 9 with a cycle nibble of 12 for *Button response* and of 7 for
+*Mute*. What we have **not** done is watch every one of them on the LED: the ids of the
+factory configuration (Star Trek, i.e. 9 + that bit) are the measured ones — 8 blinks, 9
+holds a colour, 10 breathes, 11 chases — and 12–15 lit nothing with that byte. The
+configurator offers all fourteen with the options the vendor shows, and the Debug tab's
+byte probe is the way to check the rest (`docs/PROTOCOL.md` §5-quater).
 
 **How was the protocol found?** Reverse engineering of the `.exe` plus capturing the
 real HID traffic by running the vendor tool under Wine with a DLL that impersonates
@@ -162,7 +165,7 @@ real HID traffic by running the vendor tool under Wine with a DLL that impersona
 | Button map and profiles | verified byte by byte |
 | Action table (1–20) | verified |
 | DPI (nibble packing) | verified; real DPI values still unconfirmed |
-| LED | **decoded**: 4 effects (ids 8–11; 12–15 light nothing, 0–7 unmeasured), brightness (`0x3F`), 7 user colours and 6 per-stage (`0x20–0x31`, 4-bit channels with an **inverted level**), cycle mask (`0x1D`). Symmetry and direction (`0x3A`) **unconfirmed**: no effect seen |
+| LED | **decoded**: the 14 effects of the vendor list (id in `0x1C`, second group in `0x33` bit 7, *Button response*/*Mute* in the cycle nibble), the options each one writes (speed `0x1C`, brightness `0x3F`, 7 colours + mask `0x1D`/`0x20–0x31`, symmetry and 4 directions in `0x3A`), 4-bit channels with an **inverted level**, and the **per-button animation** in bits 7–6 of each button's action byte. Seen on hardware: the factory ids only; whether symmetry/direction change the animation is still **unconfirmed** |
 | Macro timing and records | partially verified |
 | Reading (`GetFeature`) | tried on hardware, it does not return the protocol: the base is the factory image |
 | Report size (64 data bytes) | confirmed on the real mouse |

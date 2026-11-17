@@ -6,7 +6,7 @@ import {
   KEY_ADDR, buttonAddr, ACTION_CODE, CODE_ACTION, ACTION_NAME, dpiCode, parseDpi, DPI_TABLE,
   WRITE_BLOCKS, MEDIA, MEDIA_CODE, MEDIA_SLOT, USAGE_MEDIA, mediaRecord, readMedia, MACRO_CODE, KEY_CODES,
   KEY_MACRO_LEN, STEP_LEN, STREAM_BASE, STREAM_SIZE, stepStream, keyMacroRecord, keyName,
-  LED, LED_DPI_COUNT, LED_MAX, LED_MODES, LED_MODE_DARK,
+  LED, LED_DPI_COUNT, LED_MAX, LED_EFFECTS, LED_REACT_SHIFT, LED_REACT_ON, LED_REACT_MASK,
 } from "./g6.js";
 
 export const BUTTONS = [
@@ -147,7 +147,16 @@ function ledPoke(img, at, c, low) {
   });
 }
 
+// efecto guardado: primero los que llevan el nibble del ciclo fijo (Button
+// response = 0xC, Mute = 0x7), que comparten el id 9 con Cycle breath y Star Trek
+function effectOf(mode, bank, cyc) {
+  return LED_EFFECTS.find(e => e.mode === mode && e.bank === bank && e.cyc !== undefined && e.cyc === cyc)
+    || LED_EFFECTS.find(e => e.mode === mode && e.bank === bank && e.cyc === undefined)
+    || null;
+}
+
 export function readLed(mem) {
+  const profile = (mem[0x0001] >> 5) & 3;
   const user = [], dpi = [];
   for (let i = 0; i < LED_DPI_COUNT; i++) {
     const at = LED.colours + i * 3;
@@ -156,26 +165,57 @@ export function readLed(mem) {
   }
   user.push(ledTail(mem));
   const mode = mem[LED.type] >> 4;
+  const cyc = mem[LED.type] & 0x0f;
+  const bank = (mem[LED.flags] & 0x80) ? 1 : 0;
+  const eff = effectOf(mode, bank, cyc);
+  // animación del "button response": bits 7–6 del byte de acción de cada botón
+  const react = BUTTONS.map(({ i }) => {
+    const addr = buttonAddr(i, profile);
+    const byte = addr === undefined ? null : mem[addr];
+    return {
+      i, addr,
+      on: byte === null ? false : (byte & LED_REACT_ON) !== 0,
+      type: byte === null ? 0 : (byte & LED_REACT_MASK) >> LED_REACT_SHIFT,
+    };
+  });
   return {
-    mode,
-    modeName: LED_MODES[mode] || (LED_MODE_DARK.includes(mode)
-      ? `no light (${mode})` : `unknown (${mode})`),
-    raw: mem[LED.type],          // el byte tal cual: nibble alto modo, bajo tiempo de ciclo
+    effect: eff ? eff.ini : null,
+    effectName: eff ? eff.name : `unknown (id ${mode}${bank ? ", bank 2" : ""})`,
+    opts: eff ? eff.opts : [],
+    mode, bank, cyc,
+    raw: mem[LED.type],                    // el byte tal cual: nibble alto modo, bajo ciclo
     brightness: mem[LED.bright] >> 4,
-    cycle: mem[LED.cycle] & 0x7f,          // qué colores de los 7 entran en el ciclo
+    speed: cyc,                            // 0x1C bajo: velocidad del ciclo
+    mask: mem[LED.cycle] & 0x7f,           // qué colores de los 7 entran en el ciclo
     symmetry: !!(mem[LED.feats] & 0x40),
-    direction: !!(mem[LED.feats] & 0x10),  // "clockwise" en la herramienta
-    user, dpi,
+    direction: (mem[LED.feats] & 0x30) >> 4,   // 0 clockwise … 3 magicalady
+    user, dpi, react, profile,
   };
 }
 
 export function applyLed(img, led) {
   if (!led) return img;
-  if (led.mode !== undefined) img[LED.type] = hi(img[LED.type], led.mode);
-  if (led.cycle !== undefined) img[LED.cycle] = (img[LED.cycle] & 0x80) | (Number(led.cycle) & 0x7f);
+  // el efecto manda: fija el nibble del modo, el banco de 0x33 y, en Button
+  // response y Mute, el nibble del ciclo que el fabricante deja fijo
+  if (led.effect !== undefined && led.effect !== null) {
+    const e = LED_EFFECTS.find(x => x.ini === Number(led.effect));
+    if (e) {
+      const speed = e.cyc !== undefined ? e.cyc
+        : Number(led.speed !== undefined ? led.speed : img[LED.type] & 0x0f) & 0x0f;
+      img[LED.type] = ((e.mode & 0x0f) << 4) | (speed & 0x0f);
+      img[LED.flags] = e.bank ? (img[LED.flags] | 0x80) : (img[LED.flags] & ~0x80);
+    }
+  } else {
+    if (led.mode !== undefined) img[LED.type] = hi(img[LED.type], led.mode);
+    if (led.bank !== undefined) img[LED.flags] = led.bank ? (img[LED.flags] | 0x80) : (img[LED.flags] & ~0x80);
+    if (led.speed !== undefined) img[LED.type] = lo(img[LED.type], led.speed);
+  }
+  if (led.mask !== undefined) img[LED.cycle] = (img[LED.cycle] & 0x80) | (Number(led.mask) & 0x7f);
   if (led.brightness !== undefined) img[LED.bright] = hi(img[LED.bright], led.brightness);
   if (led.symmetry !== undefined) img[LED.feats] = led.symmetry ? (img[LED.feats] | 0x40) : (img[LED.feats] & ~0x40);
-  if (led.direction !== undefined) img[LED.feats] = led.direction ? (img[LED.feats] | 0x10) : (img[LED.feats] & ~0x10);
+  if (led.direction !== undefined) {
+    img[LED.feats] = (img[LED.feats] & ~0x30) | ((Number(led.direction) & 0x03) << 4);
+  }
   (led.user || []).slice(0, LED_DPI_COUNT).forEach((c, i) => ledPoke(img, LED.colours + i * 3, c, false));
   if (led.user && led.user[LED_DPI_COUNT]) {
     const c = led.user[LED_DPI_COUNT];
@@ -187,6 +227,15 @@ export function applyLed(img, led) {
   (led.dpi || []).forEach((c, i) => {
     if (i < LED_DPI_COUNT) ledPoke(img, LED.colours + i * 3, c, true);
   });
+  // animación por botón: bits 7–6 de su byte de acción + el bit de activado
+  const profile = (img[0x0001] >> 5) & 3;
+  for (const r of led.react || []) {
+    const addr = buttonAddr(r.i, profile) ?? r.addr;
+    if (addr === undefined || addr === null) continue;
+    let byte = img[addr] & ~(LED_REACT_MASK | LED_REACT_ON);
+    if (r.on) byte |= LED_REACT_ON | ((Number(r.type) & 0x03) << LED_REACT_SHIFT);
+    img[addr] = byte;
+  }
   return img;
 }
 
@@ -286,10 +335,10 @@ export function applyEdits(mem, edits, macros = []) {
     if (media !== undefined) {
       const m = MEDIA[media];
       if (!m || slot === undefined) continue;   // multimedia: sólo perfil 1
-      img[addr] = MEDIA_CODE;
+      img[addr] = (img[addr] & LED_REACT_MASK) | MEDIA_CODE;   // no pisa la animación
       img.set(mediaRecord(m.usage), slot);
     } else if (action in ACTION_CODE) {
-      img[addr] = ACTION_CODE[action];
+      img[addr] = (img[addr] & LED_REACT_MASK) | ACTION_CODE[action];   // conserva la animación
       if (slot !== undefined) img.fill(0, slot, slot + 10);  // limpia el registro
     }
   }
@@ -310,7 +359,7 @@ export function applyEdits(mem, edits, macros = []) {
       const off = freeOffset(used, bytes.length);
       if (off < 0) continue;              // no cabe: mejor no tocar el botón
       used.push([off, off + bytes.length]);
-      img[KEY_ADDR[k]] = MACRO_CODE;
+      img[KEY_ADDR[k]] = (img[KEY_ADDR[k]] & LED_REACT_MASK) | MACRO_CODE;
       img.set(keyMacroRecord(off, bytes.length), MEDIA_SLOT[k]);
       img.set(bytes, STREAM_BASE + off);
     }

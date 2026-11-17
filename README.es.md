@@ -45,7 +45,7 @@ comparan byte a byte con lo que escribe el programa original.
 |---|---|
 | **Botones** | los 10 (izquierdo, derecho, rueda, laterales, rueda inclinada, botón de DPI) → 20 acciones: botón, tecla, multimedia, macro, DPI loop, LED loop, autofire, atajos |
 | **DPI** | 6 etapas, hasta 6 colores distintos de LED, un color por etapa |
-| **Iluminación** | los 4 efectos que trae el firmware (ids 8–11), brillo, 7 colores de usuario, 6 colores por etapa y máscara del ciclo |
+| **Iluminación** | los **14 efectos** de la herramienta del fabricante, cada uno con los controles que enseña de verdad (velocidad, brillo, 7 colores + casillas del ciclo, simetría, hasta 4 direcciones), 6 colores por etapa (independientes del efecto) y **una animación por botón** para *Button response* |
 | **Macros** | nombre + pasos (tecla y retardo), hasta 16 pasos en memoria, asignables a un botón |
 | **Perfiles** | 4 perfiles de botones, con el activo a golpe de botón |
 | **Backup** | exportar/importar la configuración completa en un JSON; la imagen de fábrica va incluida |
@@ -135,12 +135,16 @@ memoria flash aparte del firmware. Aun así, **haz una copia antes** (pestaña
 *Backup*) y ten a mano la herramienta del fabricante; volver a escribir una
 configuración conocida lo deja como estaba.
 
-**¿Por qué solo hay 4 efectos de luz si la herramienta del fabricante lista 14?**
-Porque el firmware implementa cuatro (ids 8–11) y la lista del fabricante es genérica:
-repite nombres y los apunta a ids que no existen. Medido entrada por entrada, y luego
-mirado en el ratón: 8 parpadea, 9 deja el color fijo, 10 respira (con sus propios
-colores) y 11 recorre la tira; 12–15 no encienden nada. Los nombres de la herramienta
-no describen el hardware (`docs/PROTOCOL.es.md` §5-quater).
+**¿Existen los 14 efectos de luz?** Sí, y la lista de la herramienta es honesta. Conducida
+entrada por entrada, escribe 14 ajustes distintos: los ids 8–15 para los ocho primeros
+nombres, otra vez los ids 8–11 pero con el bit 7 de `0x33` puesto para el segundo grupo
+(Flicker, Star Trek, Water, enraptured), el id 9 con el nibble del ciclo a 12 para *Button
+response* y a 7 para *Mute*. Lo que **no** se ha hecho es verlos todos en el LED: los
+medidos son los de la configuración de fábrica (Star Trek, o sea 9 + ese bit) — 8 parpadea,
+9 deja el color fijo, 10 respira y 11 recorre la tira — y con ese byte los ids 12–15 no
+encendían. El configurador ofrece los catorce con las opciones que enseña el fabricante, y
+la sonda de bytes del panel Debug es la forma de comprobar el resto
+(`docs/PROTOCOL.es.md` §5-quater).
 
 **¿Cómo se averiguó el protocolo?** Ingeniería inversa del `.exe` y captura del
 tráfico HID real, ejecutando la herramienta original bajo Wine con una DLL que
@@ -166,7 +170,7 @@ firmware están soportadas; son las que trae el propio ratón.
 | Mapa de botones y perfiles | verificado byte a byte |
 | Tabla de acciones (1–20) | verificada |
 | DPI (empaquetado en nibbles) | verificado; la correspondencia con el DPI real está pendiente |
-| LED | **descifrado**: 4 efectos (ids 8–11; 12–15 no encienden, 0–7 sin medir), brillo (`0x3F`), 7 colores de usuario y 6 de etapa (`0x20–0x31`, 4 bits por canal con el **nivel invertido**), máscara del ciclo (`0x1D`). Simetría y dirección (`0x3A`) **sin confirmar**: no se les ha visto efecto |
+| LED | **descifrado**: los 14 efectos de la lista del fabricante (id en `0x1C`, segundo grupo en el bit 7 de `0x33`, *Button response*/*Mute* en el nibble del ciclo), las opciones que escribe cada uno (velocidad `0x1C`, brillo `0x3F`, 7 colores + máscara `0x1D`/`0x20–0x31`, simetría y 4 direcciones en `0x3A`), canales de 4 bits con el **nivel invertido**, y la **animación por botón** en los bits 7–6 del byte de acción de cada botón. Visto en hardware: sólo los ids de fábrica; si simetría/dirección cambian la animación sigue **sin confirmar** |
 | Tiempos y registros de macros | parcialmente verificado |
 | Lectura (`GetFeature`) | probada en hardware y no devuelve el protocolo: la base es la imagen de fábrica |
 | Tamaño de informe (64 bytes de datos) | confirmado en el ratón real |

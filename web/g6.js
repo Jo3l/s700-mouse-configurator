@@ -319,40 +319,56 @@ export function keyMacroStream(usage) { return stepStream(usage); }
 
 // ------------------------------------------------------------------- LED
 // Verificado con el arnés de Wine comparando lo que escribe la herramienta del
-// fabricante (docs/PROTOCOL.md §5-quater): cada byte de 0x20–0x31 mete DOS canales
-// de 4 bits, el color de usuario de un índice en el nibble alto y el color de esa
-// etapa de DPI en el bajo.
-export const LED = { type: 0x1c, cycle: 0x1d, colours: 0x20, feats: 0x3a, user6: 0x3e, bright: 0x3f };
+// fabricante (docs/PROTOCOL.md §5-quater). Cada byte de 0x20–0x31 mete DOS
+// canales de 4 bits (color de usuario arriba, etapa de DPI abajo).
+// 0x1C nibble alto = efecto, bajo = tiempo de ciclo; 0x33 bit 7 = la segunda
+// tanda de nombres del fabricante; 0x1D = 0x80 | colores que entran en el ciclo;
+// 0x20–0x31 = seis pares (color de usuario arriba, etapa de DPI abajo);
+// 0x3A bit 0x40 = simetría y bits 4–5 = dirección; 0x3E/0x3F = séptimo color y
+// brillo. Todo medido contra lo que escribe la herramienta (PROTOCOL §5-quater).
+export const LED = { type: 0x1c, flags: 0x33, cycle: 0x1d, colours: 0x20, feats: 0x3a, user6: 0x3e, bright: 0x3f };
 export const LED_USER_COUNT = 7;      // 6 pareados con las etapas de DPI + el 7º en 0x3E/0x3F
 export const LED_DPI_COUNT = 6;
 export const LED_MAX = 0x0f;          // canales y brillo: 0..15
 
-// Lo que hace de verdad cada valor del nibble alto de 0x1C, mirado en el ratón
-// (no se puede leer, así que esto es observación directa, no bytes):
-//
-//   8   parpadeo nervioso                                    -> Flicker
-//   9   color fijo, sin animación                            -> Steady
-//   10  respiración, pero con colores propios (ignora los elegidos) -> Breathing
-//   11  recorrido tipo "Star Trek"                           -> Chase
-//   12–15  el LED no enciende                                -> no se ofrecen
-//   0–7    sin medir: con la sonda del panel Debug se prueban en un minuto
-//          (la hipótesis es que el bit 0x8 del nibble es el "encendido")
-//
-// El desplegable del fabricante (14 nombres) NO corresponde a esto: es una lista
-// genérica que repite nombres y los asigna a ids que el ratón no tiene. Los
-// nombres de aquí son los que se ven en la unidad, no los del fabricante.
-export const LED_MODES = {
-  8: "Flicker",
-  9: "Steady (no animation)",
-  10: "Breathing (own colours)",
-  11: "Chase",
-};
+// Los catorce efectos del desplegable del fabricante y lo que deja cada uno en
+// la imagen al pulsar Apply (medido efecto por efecto con el arnés, §5-quater):
+//   ini   valor de LED_TYPE en el config.ini (= índice del desplegable)
+//   mode  nibble alto de 0x1C
+//   bank  bit 7 de 0x33: el fabricante lo pone en su segunda tanda de nombres
+//   cyc   nibble bajo de 0x1C cuando es fijo (Button response y Mute)
+//   opts  controles que el fabricante muestra para ese efecto
+// opts: "speed" = 0x1C bajo (0–7), "bright" = 0x3F alto, "colours" = los siete
+// colores y la máscara de 0x1D, "symmetry" = 0x3A bit 6, "dir2/3/4" = 0x3A
+// bits 4–5 con dos, tres o cuatro opciones, "react" = animación por botón.
+export const LED_EFFECTS = [
+  { ini: 0,  name: "Breathing",       mode: 8,  bank: 0, opts: ["speed"] },
+  { ini: 1,  name: "Cycle breath",    mode: 9,  bank: 0, opts: ["speed", "colours"] },
+  { ini: 2,  name: "Constantly",      mode: 10, bank: 0, opts: ["bright"] },
+  { ini: 3,  name: "Flow water",      mode: 11, bank: 0, opts: ["speed", "bright", "colours", "symmetry", "dir4"] },
+  { ini: 4,  name: "Single water",    mode: 12, bank: 0, opts: ["speed", "bright", "colours", "symmetry", "dir3"] },
+  { ini: 5,  name: "Comet tail",      mode: 13, bank: 0, opts: ["speed", "bright", "colours", "symmetry", "dir3"] },
+  { ini: 6,  name: "Neon",            mode: 14, bank: 0, opts: ["speed"] },
+  { ini: 7,  name: "Ambilight",       mode: 15, bank: 0, opts: ["speed", "symmetry", "dir2"] },
+  { ini: 8,  name: "Flicker",         mode: 8,  bank: 1, opts: ["speed"] },
+  { ini: 9,  name: "Star Trek",       mode: 9,  bank: 1, opts: [] },
+  { ini: 10, name: "Water",           mode: 10, bank: 1, opts: ["speed", "dir2"] },
+  { ini: 11, name: "enraptured",      mode: 11, bank: 1, opts: ["speed"] },
+  { ini: 12, name: "Button response", mode: 9,  bank: 0, cyc: 0x0c, opts: ["react"] },
+  { ini: 13, name: "Mute",            mode: 9,  bank: 0, cyc: 0x07, opts: [] },
+];
 
-// los que encienden, en orden
-export const LED_MODE_IDS = [8, 9, 10, 11];
+// 0x3A bits 4–5: la herramienta ofrece dos, tres o cuatro según el efecto
+export const LED_DIRECTIONS = ["clockwise", "inverse", "two way", "magicalady"];
 
-// valores del nibble que dejan el LED apagado en esta unidad
-export const LED_MODE_DARK = [12, 13, 14, 15];
+// "Button response": la animación de cada botón va en los bits 7–6 de su byte de
+// acción (0x08–0x0F y 0x3B–0x3C) y el bit 5 es el "enabled" del fabricante
+// (LED_REACT_EN en su config.ini). La lista es la del propio .exe, en su orden.
+export const LED_REACT_NAMES = ["Cycle breath", "Flow water", "Comet tail", "Single water"];
+export const LED_REACT_SHIFT = 6;
+export const LED_REACT_ON = 0x20;     // bit 5 del byte de acción: react activado
+export const LED_REACT_MASK = 0xc0;   // bits 7–6: animación
+export const LED_ACTION_MASK = 0x1f;  // bits 4–0: id de la acción
 
 export function keyMacroRecord(offset, len = KEY_MACRO_LEN) {
   return Uint8Array.from([0x01, 0x02, 0xff, offset & 0xff, (offset >> 8) & 0xff,

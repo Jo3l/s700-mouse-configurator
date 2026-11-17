@@ -99,27 +99,42 @@
           <label class="mono" for="ledMode">effect</label>
           <select id="ledMode"></select>
           <span class="mono hint" id="ledModeRaw"></span>
-          <label class="mono" for="ledBright" style="margin-left:auto">brightness</label>
-          <input id="ledBright" type="range" min="0" max="15" step="1" value="0">
-          <span class="mono" id="ledBrightVal" style="width:18px;text-align:right">0</span>
         </div>
         <div class="row" style="margin-top:10px">
-          <label class="ch"><input type="checkbox" id="ledSymmetry"><i>symmetric <span class="mono hint">(unconfirmed)</span></i></label>
-          <label class="ch"><input type="checkbox" id="ledDirection"><i>clockwise <span class="mono hint">(unconfirmed)</span></i></label>
+          <span class="led-opt" id="ledOptBright">
+            <label class="mono" for="ledBright">brightness <span class="hint">(0 = brightest)</span></label>
+            <input id="ledBright" type="range" min="0" max="15" step="1" value="0">
+            <span class="mono led-num" id="ledBrightVal">0</span>
+          </span>
+          <span class="led-opt" id="ledOptSpeed">
+            <label class="mono" for="ledCycle">speed</label>
+            <input id="ledCycle" type="range" min="0" max="7" step="1" value="0">
+            <span class="mono led-num" id="ledCycleVal">0</span>
+          </span>
         </div>
-        <p class="hint" style="margin-bottom:0">
-          The animations live in the firmware: you pick one and set its colours and brightness, you
-          cannot add your own. This mouse runs <b>four</b>, at ids 8–11 of the high nibble of
-          <span class="mono">0x1C</span> (the byte next to the list is what the mouse has now); every
-          other value leaves the LED dark. The names describe what the mouse actually does — the
-          vendor tool's fourteen labels are a generic list that does not match these ids, so
-          <b>Flicker</b> here is what it calls “Breathing”, and so on. <b>Symmetric</b> and
-          <b>clockwise</b> have not changed anything on any of the four yet.
+        <div class="row" style="margin-top:10px" id="ledRowFeats">
+          <span class="led-opt" id="ledOptSym">
+            <label class="ch"><input type="checkbox" id="ledSymmetry"><i>symmetric</i></label>
+          </span>
+          <span class="led-opt" id="ledOptDirs"><span class="led-dirs" id="ledDirs"></span></span>
+        </div>
+        <div id="ledOptReact" hidden>
+          <div class="row" style="margin-top:10px"><span class="mono">button response</span></div>
+          <div class="led-react" id="ledReact"></div>
+        </div>
+        <p class="hint" id="ledHint" style="margin:10px 0 0"></p>
+        <p class="hint" style="margin:10px 0 0">
+          The animations live in the firmware: you pick one, and then its colours, brightness and
+          direction. The fourteen entries and the controls each one shows are the vendor tool's own —
+          measured by driving it and diffing the image it writes, so what you set here is what it would
+          have stored. <span class="mono">0x1C</span> holds the effect (high nibble) and the cycle speed
+          (low nibble); <span class="mono">0x33</span> bit 7 selects the vendor's second group of names,
+          which is why some names repeat the same id.
         </p>
       </div>
     </section>
 
-    <section>
+    <section id="secLedColours">
       <h2>Colours</h2>
       <div class="body">
         <div class="led-colours" id="ledUser"></div>
@@ -133,7 +148,7 @@
       </div>
     </section>
 
-    <section>
+    <section id="secLedDpi">
       <h2>Colour per DPI stage</h2>
       <div class="body">
         <div class="led-colours" id="ledDpi"></div>

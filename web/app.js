@@ -3,10 +3,12 @@
 // rewrites the same blocks the vendor tool writes.
 import * as g6 from "./g6.js";
 import {
-  readConfig, applyEdits, planWrites, hexdump, ACTIONS, MEDIA_CHOICES, DPI_CHOICES, BUTTON_LABEL,
+  readConfig, applyEdits, planWrites, hexdump, ACTIONS, MEDIA_CHOICES, DPI_CHOICES, BUTTON_LABEL, BUTTONS,
   macroValue, stepsStream, MAX_STEPS, readLed,
 } from "./core.js";
-import { LED_MODES, LED_MODE_IDS, LED_MAX, LED_USER_COUNT, LED_DPI_COUNT } from "./g6.js";
+import {
+  LED_EFFECTS, LED_DIRECTIONS, LED_REACT_NAMES, LED_MAX, LED_USER_COUNT, LED_DPI_COUNT,
+} from "./g6.js";
 import { DEFAULT_MEM_HEX } from "./default_image.js";
 import * as store from "./storage.js";
 import { keyName, usageFromEventCode } from "./g6.js";
@@ -915,6 +917,8 @@ function renderMacroForm() {
 // Los controles se crean una vez y sólo se sincronizan: si se reconstruyeran en
 // cada render, arrastrar un slider perdería el foco.
 const ledRows = { user: [], dpi: [] };
+const ledDirRows = [];
+let ledSpeed = 4;            // último "speed" elegido: no arrastra el nibble fijo de Button response / Mute
 
 const currentLed = () => readLed(imgNow());
 
@@ -975,8 +979,8 @@ function buildLedRows() {
         const txt = document.createElement("i");
         txt.textContent = "cycle";
         box.onchange = () => {
-          const mask = currentLed().cycle & ~(1 << i);
-          setLed({ cycle: mask | (box.checked ? 1 << i : 0) });
+          const mask = currentLed().mask & ~(1 << i);
+          setLed({ mask: mask | (box.checked ? 1 << i : 0) });
         };
         label.append(box, txt);
         row.appendChild(label);
@@ -989,28 +993,128 @@ function buildLedRows() {
   }
 }
 
+// dirección (0x3A bits 4–5): el fabricante ofrece dos, tres o cuatro opciones
+// según el efecto; los cuatro radios se crean una vez y se ocultan los que sobran
+function buildLedDirs() {
+  if (ledDirRows.length) return;
+  LED_DIRECTIONS.forEach((name, k) => {
+    const label = document.createElement("label");
+    label.className = "ch";
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "ledDir";
+    input.value = String(k);
+    input.onchange = () => setLed({ direction: k });
+    const txt = document.createElement("i");
+    txt.textContent = name;
+    label.append(input, txt);
+    $("ledDirs").appendChild(label);
+    ledDirRows.push({ label, input });
+  });
+}
+
+// "Button response": una animación por botón, en los bits 7–6 de su byte de acción
+function buildLedReact() {
+  const host = $("ledReact");
+  if (!host || host.childElementCount) return;
+  for (const { i } of BUTTONS) {
+    const row = document.createElement("div");
+    row.className = "led-row";
+    const name = document.createElement("span");
+    name.className = "led-name";
+    name.textContent = BUTTON_LABEL[i];
+    const sel = document.createElement("select");
+    const off = document.createElement("option");
+    off.value = "off";
+    off.textContent = "— off —";
+    sel.appendChild(off);
+    LED_REACT_NAMES.forEach((n, k) => {
+      const o = document.createElement("option");
+      o.value = String(k);
+      o.textContent = `${k + 1}. ${n}`;
+      sel.appendChild(o);
+    });
+    sel.onchange = () => {
+      const led = currentLed();
+      const on = sel.value !== "off";
+      const type = on ? Number(sel.value) : 0;
+      setLed({ react: led.react.map(r => (r.i === i ? { ...r, on, type } : r)) });
+    };
+    row.append(name, sel);
+    host.appendChild(row);
+  }
+}
+
+const LED_HINT = {
+  react: "Each button runs its animation while it is held. The choice is stored in bits 7–6 of that " +
+    "button's action byte, which is the same byte the Button tab writes (that one uses bits 4–0), so the " +
+    "two do not fight. <b>off</b> clears those bits and the vendor's enable bit 5, exactly as its own tool " +
+    "writes it; if a button stops responding, choose an animation again and Apply.",
+  none: "This effect has no options in the vendor tool: picking it only changes the id in <span class=\"mono\">0x1C</span>.",
+};
+
+function ledHint(opts) {
+  if (opts.has("react")) return LED_HINT.react;
+  if (!opts.size) return LED_HINT.none;
+  const bits = [];
+  if (opts.has("speed")) bits.push("<b>speed</b> (low nibble of <span class=\"mono\">0x1C</span>, 0–7)");
+  if (opts.has("bright")) bits.push("<b>brightness</b> (high nibble of <span class=\"mono\">0x3F</span>; 0 is the factory value and the one that lights the mouse at full level)");
+  if (opts.has("colours")) bits.push("the <b>seven colours</b> and the cycle mask of <span class=\"mono\">0x1D</span>");
+  if (opts.has("symmetry")) bits.push("<b>symmetry</b> (<span class=\"mono\">0x3A</span> bit 6)");
+  if (opts.has("dir2") || opts.has("dir3") || opts.has("dir4")) {
+    bits.push("<b>direction</b> (<span class=\"mono\">0x3A</span> bits 4–5)");
+  }
+  return "This effect writes " + bits.join(", ") + ".";
+}
+
 function renderLeds(led) {
   if (!led) return;
   const sel = $("ledMode");
   if (!sel.options.length) {
-    for (const id of LED_MODE_IDS) {
+    for (const e of LED_EFFECTS) {
       const o = document.createElement("option");
-      o.value = String(id);
-      o.textContent = LED_MODES[id];
+      o.value = String(e.ini);
+      o.textContent = e.name;
       sel.appendChild(o);
     }
   }
-  // un id fuera de 8–15 es una configuración que este firmware no conoce (p. ej.
-  // lo que escribían versiones anteriores del configurador): se marca como tal
-  const known = LED_MODE_IDS.includes(led.mode);
-  sel.value = known ? String(led.mode) : "";
-  sel.classList.toggle("unknown", !known);
+  // un efecto que la herramienta no tiene (id/banco sin nombre) se marca tal cual
+  const eff = LED_EFFECTS.find(e => e.ini === led.effect) || null;
+  sel.value = eff ? String(eff.ini) : "";
+  sel.classList.toggle("unknown", !eff);
   $("ledModeRaw").textContent =
-    `0x${Number(led.raw ?? led.mode << 4).toString(16).padStart(2, "0")} · ${led.modeName}`;
+    `0x${Number(led.raw ?? 0).toString(16).padStart(2, "0")} · ${led.effectName}`;
+
+  const opts = new Set(led.opts || []);
+  const dirN = opts.has("dir4") ? 4 : opts.has("dir3") ? 3 : opts.has("dir2") ? 2 : 0;
+  $("ledOptBright").hidden = !opts.has("bright");
+  $("ledOptSpeed").hidden = !opts.has("speed");
+  $("ledOptSym").hidden = !opts.has("symmetry");
+  $("ledOptDirs").hidden = dirN === 0;
+  ledDirRows.forEach(({ label }, k) => { label.hidden = k >= dirN; });
+  $("ledRowFeats").hidden = !opts.has("symmetry") && dirN === 0;
+  $("ledOptReact").hidden = !opts.has("react");
+  // los siete colores y sus casillas sólo los enseña el fabricante en los efectos
+  // que ciclan colores; en los demás el color es fijo y no hay nada que elegir
+  $("secLedColours").hidden = !opts.has("colours");
+
+  // Button response y Mute guardan un nibble de ciclo fijo: el slider no debe
+  // arrastrarlo al cambiar a otro efecto
+  if (!eff || eff.cyc === undefined) ledSpeed = led.speed;
+
   $("ledBright").value = String(led.brightness);
   $("ledBrightVal").textContent = String(led.brightness);
+  $("ledCycle").value = String(ledSpeed);
+  $("ledCycleVal").textContent = String(ledSpeed);
   $("ledSymmetry").checked = led.symmetry;
-  $("ledDirection").checked = led.direction;
+  ledDirRows.forEach(({ input }, k) => { input.checked = k === led.direction && k < dirN; });
+
+  (led.react || []).forEach(r => {
+    const row = $("ledReact").children[r.i];
+    if (!row) return;
+    const s = row.querySelector("select");
+    if (s && document.activeElement !== s) s.value = r.on ? String(r.type) : "off";
+  });
 
   for (const kind of ["user", "dpi"]) {
     (led[kind] || []).forEach((c, i) => {
@@ -1018,9 +1122,14 @@ function renderLeds(led) {
       if (!row) return;
       if (document.activeElement !== row.picker) row.picker.value = toHex(c);
       row.val.textContent = `${c.r} ${c.g} ${c.b}`;
-      if (row.cycle) row.cycle.checked = !!(led.cycle & (1 << i));
+      if (row.cycle) {
+        row.cycle.checked = !!(led.mask & (1 << i));
+        row.cycle.disabled = !opts.has("colours");   // sin máscara no hay ciclo que marcar
+      }
     });
   }
+
+  $("ledHint").innerHTML = ledHint(opts);
 }
 
 // ---------------------------------------------------------------- wiring
@@ -1032,10 +1141,10 @@ $("btnForget").onclick = forgetSaved;
 $("btnApply").onclick = apply;
 $("btnApplyMacros").onclick = apply;
 $("btnApplyLeds").onclick = apply;
-$("ledMode").onchange = () => setLed({ mode: Number($("ledMode").value) });
+$("ledMode").onchange = () => setLed({ effect: Number($("ledMode").value), speed: ledSpeed });
 $("ledBright").oninput = () => setLed({ brightness: Number($("ledBright").value) });
+$("ledCycle").oninput = () => { ledSpeed = Number($("ledCycle").value); setLed({ speed: ledSpeed }); };
 $("ledSymmetry").onchange = () => setLed({ symmetry: $("ledSymmetry").checked });
-$("ledDirection").onchange = () => setLed({ direction: $("ledDirection").checked });
 $("btnMacroNew").onclick = newMacro;
 $("btnMacroDelete").onclick = deleteMacro;
 $("btnMacroAddStep").onclick = () => {
@@ -1237,5 +1346,7 @@ $("btnInstallRule").onclick = async () => {
 checkPermissions();
 
 buildLedRows();
+buildLedDirs();
+buildLedReact();
 restoreOnLoad();
 renderStorage();

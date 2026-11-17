@@ -50,8 +50,19 @@ const inPanel = (panel, ids, label) => {
   check(label, missing.length === 0, missing.join(","));
 };
 inPanel(mainPanel, ["profiles", "buttons", "dpi", "btnApply", "btnDefaults", "applyState"], "editor controls sit in Configuration");
-inPanel(lightsPanel, ["ledMode", "ledModeRaw", "ledBright", "ledBrightVal", "ledSymmetry",
-  "ledDirection", "ledUser", "ledDpi", "btnApplyLeds", "ledApplyState", "ledBar"], "the lighting controls sit in Lighting");
+inPanel(lightsPanel, ["ledMode", "ledModeRaw", "ledOptBright", "ledBright", "ledBrightVal",
+  "ledOptSpeed", "ledCycle", "ledCycleVal", "ledOptSym", "ledSymmetry", "ledOptDirs", "ledDirs",
+  "ledRowFeats", "ledOptReact", "ledReact", "ledHint", "secLedColours", "secLedDpi", "ledUser", "ledDpi",
+  "btnApplyLeds",
+  "ledApplyState", "ledBar"], "the lighting controls sit in Lighting");
+check("el panel de efectos enseña los controles de cada efecto y no los de otro",
+  /ledOptBright"\)\.hidden/.test(app) && /ledOptSpeed"\)\.hidden/.test(app) &&
+  /ledOptSym"\)\.hidden/.test(app) && /ledOptReact"\)\.hidden/.test(app) &&
+  /ledOptDirs"\)\.hidden/.test(app) && /secLedColours"\)\.hidden/.test(app) &&
+  !/secLedDpi"\)\.hidden/.test(app));
+check("el button response ofrece la animación de cada botón",
+  /function buildLedReact\(/.test(app) && /LED_REACT_NAMES/.test(app) &&
+  /const host = \$\("ledReact"\)/.test(app) && /host\.appendChild\(row\)/.test(app));
 
 // en Linux el host nativo ofrece instalar la regla udev sin copiar nada a mano
 inPanel(debugPanel, ["linPerm", "linPermNode", "btnInstallRule", "linPermState"], "the udev-rule helper sits in Debug");
@@ -87,8 +98,10 @@ check("diagram numbers reuse the table badge",
   (app.match(/badge\.className = "num-badge"/g) || []).length === 2 &&
   /\.num-badge \{/.test(css) && /\.diagram \.hot \.num-badge/.test(css));
 check("app.js wires the lighting tab",
-  /buildLedRows\(\);/.test(app) && /function renderLeds\(/.test(app) &&
-  /btnApplyLeds"\).onclick/.test(app) && /ledMode"\).onchange/.test(app));
+  /buildLedRows\(\);/.test(app) && /buildLedDirs\(\);/.test(app) && /buildLedReact\(\);/.test(app) &&
+  /function renderLeds\(/.test(app) && /btnApplyLeds"\).onclick/.test(app) && /ledMode"\).onchange/.test(app));
+check("los ids viejos de luces desaparecieron (direction era un checkbox)",
+  !/id="ledDirection"/.test(html) && !/LED_MODE_IDS|LED_MODE_DARK/.test(app) && !/LED_MODE_IDS|LED_MODE_DARK/.test(html));
 check("app.js wires the macro editor",
   ["newMacro", "deleteMacro", "editMacro", "renderMacroList", "renderMacroForm"].every(f => new RegExp(`function ${f}\\(`).test(app)) &&
   /btnMacroNew"\)\.onclick/.test(app) && /btnApplyMacros"\)\.onclick/.test(app));

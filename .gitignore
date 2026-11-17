@@ -8,6 +8,9 @@ mi-raton.json
 tools/probe/*.log
 !tools/probe/baseline.log
 tools/probe/in.ini
+# lo que dejan los guiones de casos (cada uno con su config.ini aplicado)
+tools/probe/cases_*.json
+tools/probe/ini_*.ini
 
 # capturas del arnés de Wine (se regeneran; se guarda la del desplegable como prueba)
 tools/probe/*.png
