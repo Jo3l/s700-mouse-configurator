@@ -404,11 +404,11 @@ herramienta llama **Star Trek**.
 Cambiar el brillo de 0 a 1 mueve sólo `0x3F` (`0x00→0x10`), y de 0 a 7 lo pone
 en `0x70`; cambiar un color mueve **sólo** su byte, en el nibble que le toca.
 
-**Modos: el firmware sólo tiene OCHO, ids 8–15.** El desplegable del fabricante
-tiene 14 entradas, pero se repiten encima: al elegir cada una y pulsar Apply, la
-herramienta escribe el byte que se ve abajo. Medido dos veces (forzando
-`LED_TYPE` en el ini y eligiendo el elemento en la UI con clic sostenido;
-`tools/probe/led_names_ui.py`, resultados en `tools/probe/led_names_ui.json`).
+**Modos: el desplegable del fabricante no describe el hardware.** Su lista tiene
+14 entradas, pero al elegir cada una y pulsar Apply escribe estos bytes (medido dos
+veces: forzando `LED_TYPE` en el ini y eligiendo el elemento en la UI con clic
+sostenido — `tools/probe/led_names_ui.py`, resultados en
+`tools/probe/led_names_ui.json`):
 
 | entrada del desplegable | `0x1C` alto |
 |---|---|
@@ -420,18 +420,36 @@ herramienta escribe el byte que se ve abajo. Medido dos veces (forzando
 | 6 Comet tail | 13 |
 | 7 Neon | 14 |
 | 8 Ambilight | 15 |
-| 9 Flicker | **8** (= Breathing) |
-| 10 Star Trek | **9** (= Cycle breath) |
-| 11 Water | **10** (= Constantly) |
-| 12 enraptured | **11** (= Flow water) |
-| 13 Button response | 9 (y además cambia el tiempo de ciclo) |
-| 14 Mute | 8 (y además cambia el tiempo de ciclo) |
+| 9 Flicker | **8** |
+| 10 Star Trek | **9** |
+| 11 Water | **10** |
+| 12 enraptured | **11** |
+| 13 Button response | 9 (y toca el tiempo de ciclo) |
+| 14 Mute | 8 (y toca el tiempo de ciclo) |
 
-O sea que "Flicker", "Star Trek", "Water" y "enraptured" no son efectos distintos
-en este ratón: son alias que acaban en los mismos ids. El configurador ofrece los
-ocho de verdad (`LED_MODE_IDS` en `web/g6.js`) con el alias entre paréntesis, y
-marca como desconocido un id fuera de 8–15 (que es lo que dejaban versiones
-anteriores de la herramienta, que escribían el índice de la lista).
+O sea que el desplegable repite: "Flicker" y "Breathing" escriben lo mismo, y así
+cuatro pares. Los nombres del fabricante **no** coinciden con lo que hace el ratón.
+
+**Lo que hace el ratón, mirando el LED** (no se puede leer, así que es observación
+directa escribiendo cada valor del nibble alto):
+
+| `0x1C` alto | qué se ve |
+|---|---|
+| 8 | parpadeo nervioso |
+| 9 | color fijo, sin animación |
+| 10 | respiración, pero **con colores propios**: ignora los que están puestos |
+| 11 | recorrido tipo "Star Trek" |
+| 12–15 | **no enciende** |
+| 0–7 | sin medir (probablemente apagado: el bit `0x8` del nibble parece el "encendido") |
+
+Con eso, la pestaña Lighting sólo ofrece 8–11 y el resto se muestra como
+`no light (N)` o `unknown (N)` si el ratón ya venía así. Para barrer los valores que
+faltan sin tocar la UI está la **sonda de bytes** del panel Debug (escribe un byte en
+la imagen que se enviará con el siguiente Apply).
+
+Los bits de **simetría** (`0x3A & 0x40`) y **dirección** (`0x3A & 0x10`) tampoco han
+cambiado nada en ninguno de los cuatro efectos que encienden: siguen en la UI marcados
+como sin confirmar, y se conservan como los tenía la imagen de fábrica (`0x0D`).
 
 El **tiempo de ciclo** está en el nibble bajo de `0x1C` y se recorta a 0–7. Las
 entradas "Button response" y "Mute" son las únicas que lo tocan (12 y 7), así que

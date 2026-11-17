@@ -52,6 +52,11 @@ const inPanel = (panel, ids, label) => {
 inPanel(mainPanel, ["profiles", "buttons", "dpi", "btnApply", "btnDefaults", "applyState"], "editor controls sit in Configuration");
 inPanel(lightsPanel, ["ledMode", "ledModeRaw", "ledBright", "ledBrightVal", "ledSymmetry",
   "ledDirection", "ledUser", "ledDpi", "btnApplyLeds", "ledApplyState", "ledBar"], "the lighting controls sit in Lighting");
+
+// la pestaña Debug trae la sonda de bytes (para mirar campos que la UI no expone)
+inPanel(debugPanel, ["pokeAddr", "pokeVal", "btnPoke", "btnPokeClear", "pokeState"]);
+check("la sonda escribe en la imagen y no se guarda",
+  /pokes\.set\(addr, val\)/.test(app) && /for \(const \[addr, val\] of pokes\) img\[addr\] = val/.test(app));
 check("Apply sits after the colours, at the foot of Lighting",
   lightsPanel.indexOf('id="ledDpi"') < lightsPanel.indexOf('id="btnApplyLeds"') &&
   /whole configuration/.test(lightsPanel), "order in the Lighting panel");

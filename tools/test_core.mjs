@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import * as g6 from "../web/g6.js";
 import { readConfig, readLed, planWrites, applyEdits, applyLed, settingsForCode, DPI_CHOICES, MEDIA_CHOICES } from "../web/core.js";
-import { LED_MODES, LED_MODE_IDS } from "../web/g6.js";
+import { LED_MODES, LED_MODE_IDS, LED_MODE_DARK } from "../web/g6.js";
 import { MEDIA_SLOT, MEDIA } from "../web/g6.js";
 
 const frames = [];
@@ -203,11 +203,14 @@ check("macro no se ofrece como opción editable", mb.action === null);
   const hx = (a, from, n) => [...a.slice(from, from + n)].map(b => b.toString(16).padStart(2, "0")).join(" ");
   const led = readConfig(mem).led;
   const DJ = v => JSON.stringify(v);
-  check("led: modo 9 = Cycle breath (Star Trek)", led.mode === 9 && led.modeName === "Cycle breath (Star Trek)", String(led.modeName));
-  check("led: sólo existen los ids 8–15", DJ([...LED_MODE_IDS]) === DJ([8, 9, 10, 11, 12, 13, 14, 15]) &&
+  check("led: modo 9 = Steady (color fijo)", led.mode === 9 && led.modeName === "Steady (no animation)", String(led.modeName));
+  check("led: sólo encienden los ids 8–11", DJ([...LED_MODE_IDS]) === DJ([8, 9, 10, 11]) &&
     [...LED_MODE_IDS].every(id => typeof LED_MODES[id] === "string"), DJ([...LED_MODE_IDS]));
-  check("led: un id que el firmware no tiene se nombra como tal", /unknown mode 3/.test(readLed(
-    (() => { const p = Uint8Array.from(mem); p[0x1c] = 0x34; return p; })()).modeName));
+  check("led: 12–15 se nombran como apagados", LED_MODE_DARK.length === 4 &&
+    readLed((() => { const p = Uint8Array.from(mem); p[0x1c] = 0xc4; return p; })()).modeName === "no light (12)",
+    readLed((() => { const p = Uint8Array.from(mem); p[0x1c] = 0xc4; return p; })()).modeName);
+  check("led: un valor no medido (3) se nombra como desconocido", readLed(
+    (() => { const p = Uint8Array.from(mem); p[0x1c] = 0x34; return p; })()).modeName === "unknown (3)");
   check("led: brillo 0 como LED_BRIGHT", led.brightness === 0);
   // El config.ini del fabricante, con el nivel invertido: el byte guarda la
   // "oscuridad" (el LED enciende con 15 - v), comprobado en hardware.
@@ -222,13 +225,13 @@ check("macro no se ofrece como opción editable", mb.action === null);
   check("led: simetría y dirección apagadas", !led.symmetry && !led.direction);
 
   const want = {
-    mode: 12, brightness: 7, cycle: 1, symmetry: true, direction: true,
+    mode: 11, brightness: 7, cycle: 1, symmetry: true, direction: true,
     user: [...led.user.slice(0, 6), { r: 15, g: 0, b: 15 }], dpi: led.dpi,
   };
   const img = applyEdits(Uint8Array.from(mem), { led: want });
   check("led: el brillo va al nibble alto de 0x3F", img[0x3f] === 0x70, hx(img, 0x3f, 1));
-  check("led: el modo va al nibble alto de 0x1C (id 12) y el bajo no se toca",
-    img[0x1c] === ((12 << 4) | (mem[0x1c] & 0x0f)), hx(img, 0x1c, 1));
+  check("led: el modo va al nibble alto de 0x1C (id 11) y el bajo no se toca",
+    img[0x1c] === ((11 << 4) | (mem[0x1c] & 0x0f)), hx(img, 0x1c, 1));
   check("led: la máscara del ciclo respeta el bit alto de 0x1D", img[0x1d] === 0x81, hx(img, 0x1d, 1));
   check("led: simetría y dirección son bits de 0x3A", img[0x3a] === (mem[0x3a] | 0x50), hx(img, 0x3a, 1));
   check("led: el color 7 usa 0x3E y el nibble bajo de 0x3F", img[0x3e] === 0x0f && (img[0x3f] & 0x0f) === 0x00,
@@ -255,7 +258,7 @@ check("macro no se ofrece como opción editable", mb.action === null);
   })());
   const back2 = readConfig(img).led;   // mismo orden de claves que devuelve readLed
   check("led: ida y vuelta por applyEdits",
-    back2.mode === want.mode && back2.modeName === "Single water" && back2.brightness === want.brightness &&
+    back2.mode === want.mode && back2.modeName === "Chase" && back2.brightness === want.brightness &&
     back2.cycle === want.cycle && back2.symmetry === want.symmetry && back2.direction === want.direction &&
     DJ(back2.user) === DJ(want.user) && DJ(back2.dpi) === DJ(want.dpi), DJ(back2));
 

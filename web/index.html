@@ -91,16 +91,17 @@
           <span class="mono" id="ledBrightVal" style="width:18px;text-align:right">0</span>
         </div>
         <div class="row" style="margin-top:10px">
-          <label class="ch"><input type="checkbox" id="ledSymmetry"><i>symmetric</i></label>
-          <label class="ch"><input type="checkbox" id="ledDirection"><i>clockwise</i></label>
+          <label class="ch"><input type="checkbox" id="ledSymmetry"><i>symmetric <span class="mono hint">(unconfirmed)</span></i></label>
+          <label class="ch"><input type="checkbox" id="ledDirection"><i>clockwise <span class="mono hint">(unconfirmed)</span></i></label>
         </div>
         <p class="hint" style="margin-bottom:0">
-          The effects are the firmware's own — you pick one and set its colours, brightness and
-          direction; the mouse cannot run an animation that is not already inside it. It has
-          <b>eight</b> of them, ids 8–15, and the effect goes in the high nibble of
-          <span class="mono">0x1C</span> (the number shown next to it is that byte, read from the
-          mouse). The vendor tool lists fourteen names, but six are the same eight effects under
-          another name — those aliases are in brackets so the effect is easy to find.
+          The animations live in the firmware: you pick one and set its colours and brightness, you
+          cannot add your own. This mouse runs <b>four</b>, at ids 8–11 of the high nibble of
+          <span class="mono">0x1C</span> (the byte next to the list is what the mouse has now); every
+          other value leaves the LED dark. The names describe what the mouse actually does — the
+          vendor tool's fourteen labels are a generic list that does not match these ids, so
+          <b>Flicker</b> here is what it calls “Breathing”, and so on. <b>Symmetric</b> and
+          <b>clockwise</b> have not changed anything on any of the four yet.
         </p>
       </div>
     </section>
@@ -240,6 +241,28 @@
           <button id="btnCopy" disabled>Copy diagnostic</button>
         </div>
         <pre id="device" class="mono">(no device)</pre>
+      </div>
+    </section>
+
+    <section>
+      <h2>Byte probe</h2>
+      <div class="body">
+        <div class="row">
+          <label class="mono" for="pokeAddr">address</label>
+          <input id="pokeAddr" class="mono" type="text" value="0x1c" style="width:76px">
+          <label class="mono" for="pokeVal">value</label>
+          <input id="pokeVal" class="mono" type="text" value="0x84" style="width:76px">
+          <button id="btnPoke">Set in image</button>
+          <button id="btnPokeClear" class="ghost">Clear all</button>
+          <span class="mono hint" id="pokeState" style="margin-left:auto">(none)</span>
+        </div>
+        <p class="hint" style="margin-bottom:0">
+          Sets one byte in the image this browser is holding — nothing is sent until <b>Apply</b>.
+          For the fields the Lighting tab does not expose: sweep <span class="mono">0x1C</span>
+          (effect in the high nibble, cycle time in the low one), <span class="mono">0x3F</span>
+          (brightness) or <span class="mono">0x3A</span> (the symmetry/direction bits) and watch the
+          mouse. Probes are not part of the saved configuration and are dropped on reload.
+        </p>
       </div>
     </section>
 

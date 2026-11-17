@@ -20,8 +20,19 @@ const state = {
   macros: [],          // lista guardada en este navegador (ver pestaña Macros)
 };
 
+// Sonda del panel Debug: bytes que se fuerzan DESPUÉS de aplicar las ediciones,
+// para mirar campos que la UI no expone. No se guardan en ningún sitio.
+const pokes = new Map();          // dirección -> byte
+
 const $ = id => document.getElementById(id);
 const statusEl = $("status"), logEl = $("log"), hexEl = $("hex"), barEl = $("bar");
+
+// imagen = base + ediciones + sondas del panel Debug
+function imgNow() {
+  const img = applyEdits(state.mem, state.edits, state.macros);
+  for (const [addr, val] of pokes) img[addr] = val;
+  return img;
+}
 
 function setStatus(text, cls = "") {
   statusEl.textContent = text;
@@ -368,7 +379,7 @@ function markRow(n, on) {
 function render() {
   // Se pinta la imagen CON los cambios pendientes: si no, al repintar el select
   // vuelve al valor del ratón y el cambio parece no haberse hecho.
-  const cfg = readConfig(applyEdits(state.mem, state.edits, state.macros), state.macros);
+  const cfg = readConfig(imgNow(), state.macros);
 
   const prof = $("profiles");
   prof.textContent = "";
@@ -526,7 +537,7 @@ function render() {
     dp.appendChild(cell);
   });
 
-  const shown = applyEdits(state.mem, state.edits, state.macros);   // lo que se enviaría ahora mismo
+  const shown = imgNow();   // lo que se enviaría ahora mismo
   hexEl.textContent = !state.ready
     ? "(nothing loaded yet)"
     : hexdump(shown, 0, 0x80) + "\n…\n" +
@@ -609,7 +620,7 @@ function useCapturedKey() {
 async function apply() {
   if (!state.dev || !state.ready) return;
   try {
-    const img = applyEdits(state.mem, state.edits, state.macros);
+    const img = imgNow();
     // Se manda SIEMPRE la imagen completa, como el fabricante. Escribir sólo los
     // bloques tocados deja la tabla de punteros de 0x006E sin actualizar y el
     // ratón descarta el cambio (comprobado en hardware el 17/11/2026: con la
@@ -643,7 +654,7 @@ function backup() {
   // viven en state.edits, así que sin consolidarlos el fichero salía viejo.
   const data = {
     tool: "s700-webhid", version: 1, date: new Date().toISOString(), size: MEM_SIZE,
-    mem: g6.toHex(applyEdits(state.mem, state.edits, state.macros)),
+    mem: g6.toHex(imgNow()),
     macros: state.macros,   // el flujo ya va en la imagen; esto es nombre y pasos
   };
   const blob = new Blob([JSON.stringify(data, null, 1)], { type: "application/json" });
@@ -735,7 +746,7 @@ const newMacroId = () => "m" + Date.now().toString(36) + Math.random().toString(
 const macroById = id => state.macros.find(m => m.id === id) || null;
 const macroUsers = (cfg, id) => cfg.buttons.filter(b => b.action === macroValue(id)).map(b => b.i + 1);
 
-function cfgNow() { return readConfig(applyEdits(state.mem, state.edits, state.macros), state.macros); }
+function cfgNow() { return readConfig(imgNow(), state.macros); }
 
 function saveMacros() {
   if (!store.saveMacros(state.macros)) setStatus("could not save the macros in this browser", "warn");
@@ -905,7 +916,7 @@ function renderMacroForm() {
 // cada render, arrastrar un slider perdería el foco.
 const ledRows = { user: [], dpi: [] };
 
-const currentLed = () => readLed(applyEdits(state.mem, state.edits, state.macros));
+const currentLed = () => readLed(imgNow());
 
 // Los canales del ratón son de 4 bits: el selector nativo da 8, así que se
 // cuantiza a los 16 niveles que caben (v * 17) y se le devuelve al control el
@@ -994,7 +1005,8 @@ function renderLeds(led) {
   const known = LED_MODE_IDS.includes(led.mode);
   sel.value = known ? String(led.mode) : "";
   sel.classList.toggle("unknown", !known);
-  $("ledModeRaw").textContent = `0x${Number(led.raw ?? led.mode << 4).toString(16).padStart(2, "0")}`;
+  $("ledModeRaw").textContent =
+    `0x${Number(led.raw ?? led.mode << 4).toString(16).padStart(2, "0")} · ${led.modeName}`;
   $("ledBright").value = String(led.brightness);
   $("ledBrightVal").textContent = String(led.brightness);
   $("ledSymmetry").checked = led.symmetry;
@@ -1113,7 +1125,7 @@ navigator.hid?.addEventListener("disconnect", e => {
 window.__s700 = {
   state, g6,
   macros: () => state.macros,
-  cfg: () => readConfig(applyEdits(state.mem, state.edits, state.macros), state.macros),
+  cfg: () => readConfig(imgNow(), state.macros),
   render: () => render(),
   read: () => read(),
   apply: () => apply(),
@@ -1145,6 +1157,41 @@ function restoreOnLoad() {
   render();
   renderMacroForm();
 }
+
+// ---------------------------------------------------------------- sonda (Debug)
+function parseByte(text) {
+  const t = String(text).trim();
+  if (!t) return null;
+  const n = /^0x[0-9a-f]+$/i.test(t) ? parseInt(t, 16)
+    : /^[0-9]+$/.test(t) ? parseInt(t, 10)
+    : /^[0-9a-f]+$/i.test(t) ? parseInt(t, 16) : NaN;
+  return Number.isFinite(n) ? n : null;
+}
+
+function renderPokes() {
+  const parts = [...pokes].sort((a, b) => a[0] - b[0])
+    .map(([addr, val]) => `0x${addr.toString(16).padStart(4, "0")}=0x${val.toString(16).padStart(2, "0")}`);
+  $("pokeState").textContent = parts.length ? parts.join("  ") : "(none)";
+}
+
+function addPoke() {
+  const addr = parseByte($("pokeAddr").value), val = parseByte($("pokeVal").value);
+  if (addr === null || addr < 0 || addr >= MEM_SIZE) {
+    $("pokeState").textContent = `address must be 0x0000–0x${(MEM_SIZE - 1).toString(16)}`;
+    return;
+  }
+  if (val === null || val < 0 || val > 0xff) {
+    $("pokeState").textContent = "value must be a byte (0x00–0xff)";
+    return;
+  }
+  pokes.set(addr, val);
+  renderPokes();
+  render();                       // que el volcado y las pestañas lo reflejen
+}
+
+$("btnPoke").onclick = addPoke;
+$("btnPokeClear").onclick = () => { pokes.clear(); renderPokes(); render(); };
+renderPokes();
 
 buildLedRows();
 restoreOnLoad();

@@ -6,7 +6,7 @@ import {
   KEY_ADDR, buttonAddr, ACTION_CODE, CODE_ACTION, ACTION_NAME, dpiCode, parseDpi, DPI_TABLE,
   WRITE_BLOCKS, MEDIA, MEDIA_CODE, MEDIA_SLOT, USAGE_MEDIA, mediaRecord, readMedia, MACRO_CODE, KEY_CODES,
   KEY_MACRO_LEN, STEP_LEN, STREAM_BASE, STREAM_SIZE, stepStream, keyMacroRecord, keyName,
-  LED, LED_DPI_COUNT, LED_MAX, LED_MODES,
+  LED, LED_DPI_COUNT, LED_MAX, LED_MODES, LED_MODE_DARK,
 } from "./g6.js";
 
 export const BUTTONS = [
@@ -158,7 +158,8 @@ export function readLed(mem) {
   const mode = mem[LED.type] >> 4;
   return {
     mode,
-    modeName: LED_MODES[mode] || `unknown mode ${mode} — not one of the eight this mouse has`,
+    modeName: LED_MODES[mode] || (LED_MODE_DARK.includes(mode)
+      ? `no light (${mode})` : `unknown (${mode})`),
     raw: mem[LED.type],          // el byte tal cual: nibble alto modo, bajo tiempo de ciclo
     brightness: mem[LED.bright] >> 4,
     cycle: mem[LED.cycle] & 0x7f,          // qué colores de los 7 entran en el ciclo

@@ -327,25 +327,32 @@ export const LED_USER_COUNT = 7;      // 6 pareados con las etapas de DPI + el 7
 export const LED_DPI_COUNT = 6;
 export const LED_MAX = 0x0f;          // canales y brillo: 0..15
 
-// El firmware sólo tiene OCHO efectos, con los ids 8–15. La lista del
-// fabricante tiene 14 entradas pero se repite encima: "Flicker" escribe el 8,
-// igual que "Breathing"; "Star Trek" el 9, etc. Medido eligiendo cada entrada en
-// la herramienta y capturando el byte (tools/probe/led_names_ui.py → 8..15).
-// Entre paréntesis, el alias que usa el desplegable del fabricante para el mismo
-// id, para que el efecto se encuentre con el nombre que uno conozca.
+// Lo que hace de verdad cada valor del nibble alto de 0x1C, mirado en el ratón
+// (no se puede leer, así que esto es observación directa, no bytes):
+//
+//   8   parpadeo nervioso                                    -> Flicker
+//   9   color fijo, sin animación                            -> Steady
+//   10  respiración, pero con colores propios (ignora los elegidos) -> Breathing
+//   11  recorrido tipo "Star Trek"                           -> Chase
+//   12–15  el LED no enciende                                -> no se ofrecen
+//   0–7    sin medir: con la sonda del panel Debug se prueban en un minuto
+//          (la hipótesis es que el bit 0x8 del nibble es el "encendido")
+//
+// El desplegable del fabricante (14 nombres) NO corresponde a esto: es una lista
+// genérica que repite nombres y los asigna a ids que el ratón no tiene. Los
+// nombres de aquí son los que se ven en la unidad, no los del fabricante.
 export const LED_MODES = {
-  8: "Breathing (Flicker)",
-  9: "Cycle breath (Star Trek)",
-  10: "Constantly (Water)",
-  11: "Flow water (enraptured)",
-  12: "Single water",
-  13: "Comet tail",
-  14: "Neon",
-  15: "Ambilight",
+  8: "Flicker",
+  9: "Steady (no animation)",
+  10: "Breathing (own colours)",
+  11: "Chase",
 };
 
-// ids que existen de verdad, en orden
-export const LED_MODE_IDS = [8, 9, 10, 11, 12, 13, 14, 15];
+// los que encienden, en orden
+export const LED_MODE_IDS = [8, 9, 10, 11];
+
+// valores del nibble que dejan el LED apagado en esta unidad
+export const LED_MODE_DARK = [12, 13, 14, 15];
 
 export function keyMacroRecord(offset, len = KEY_MACRO_LEN) {
   return Uint8Array.from([0x01, 0x02, 0xff, offset & 0xff, (offset >> 8) & 0xff,
