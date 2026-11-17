@@ -346,13 +346,29 @@ Assigning by hand (Macro tab → choose macro → Insert → Apply) the
 | byte | value | meaning |
 |---|---|---|
 | `0x0E` (button 10) | `0x2D` | **action = macro** (multimedia was `0x2F`, basic `0x21–0x3A`) |
-| `0xDC` (its slot) | `01 02 ff 00 00 00 04 00 0A 00` | type `02` = macro, `00 00` = offset in the block, `0A 00` = length (10 bytes) |
-| `0x400` | `01 00 85 25 0A 25 00 00 01 00` | the 10 bytes of the macro flow |
+| `0xDC` (its slot) | `01 02 ff 00 00 00 04 00 0A 00` | type `02` = macro, byte 5 = offset in the block, bytes 3–4 = parameter (0 for macros, the consumer usage for multimedia), `0A 00` = length |
+| `0x400` | `01 00 85 25 0A 25 00 00 01 00` | the macro flow: 8 bytes, plus the `01 00` that heads the next record |
 
 Inside the flow **HID keyboard usages** appear: `0x25` is key `8` (`0x1E`
 = `1`, `0x1F` = `2`… `0x26` = `9`), which is exactly the key of that macro. So
 the mouse stores keys as HID usages, and a button can execute them without the
 vendor application.
+
+**The offset is byte 5, not bytes 3–4.** The slot record is
+`01 <type> ff <param_lo> <param_hi> <offset> 04 00 <len_lo> <len_hi>`: the bytes that
+carry data are 3–4 and they hold the *parameter* of the action (a consumer usage in the
+multimedia records, e.g. `01 00 ff 23 02 b0 04 00 0A 00` for Browser = `0x0223`), while the
+displacement into `0x400` is the single byte 5. Two independent captures confirm it: the
+vendor's second macro leaves `01 00 ff 00 00 08 04 00 00 00` — offset `8` for the second
+macro, `0` for the first — and when it inserts one macro the six pointers of `0x006E` grow
+by `8`, i.e. **each assigned macro takes 8 bytes at the front of the arena** and the rest is
+shifted. Same when two are assigned (+`0x10`) — in that case it reserves the space and
+writes no steps at all (those macros live on the PC, not on the mouse).
+
+The configurator wrote the offset in bytes 3–4 until this was found, so the firmware read
+`0` in every record and **every button played the first flow**: four buttons with W, Shift,
+O and I all typed `W`. `web/g6.js` and `web/core.js` now write and read byte 5 (older
+images are still read through the 3–4 fallback).
 
 The macro editor also supports steps of type XY (movement), CPI (DPI
 change), LED and delays, and repeat options ("Run Until release", "Run Until
@@ -482,26 +498,26 @@ animation is.
 
 ### How the web configurator uses it
 
-`web/core.js` encodes a macro as **10 bytes per step** (`01 00 83 <usage>
-<delay> <usage> 00 00 01 00`), the same shape as the capture of one vendor
-step, and assigns it to the button with `0x2D` + the register of the slot. The byte
-`0x83` is the one from the "map" capture; in "first aid" the vendor put `0x85`, so
-that byte remains open: **macros of more than one step are an extrapolation
-and are not tested on the mouse**. The editor limits to 16 steps (168 B from `0x400`,
-the whole block) and does not write a flow that does not fit.
+`web/core.js` encodes a macro as **8 bytes per step** (`01 00 83 <usage> <delay>
+<usage> 00 00`), the same record the vendor writes, and assigns it to the button with `0x2D`
++ the register of the slot. The arena is a list of **8-byte records** and every flow must
+start on one: inserting a macro moves the vendor's own arena content by exactly `8` (one
+macro → the first factory record sits at `0x408`; two → `0x410`) and the four pointers at
+`0x006E` move with it, so a flow at an unaligned offset resolves to the wrong record. The
+byte `0x83` is the one from the "map" capture; in "first aid" the vendor put `0x85`, so
+that byte remains open. The editor limits to 21 steps (168 B from `0x400`, the whole
+block) and does not write a flow that does not fit.
 
-### What is missing to "assign a key directly"
+### Assigning a key to a button (resolved)
 
-The 10-byte "first aid" flow encodes **two** key steps in 10 bytes, so
-each step takes ~5 bytes (usage + delay + flags), but with a single sample the
-exact split cannot be fixed. Plan to close it:
-
-1. Create three single-step macros in the tool (key `A`, `Shift` alone,
-   `Ctrl+C`) with the "Please enter the key" dialogue.
-2. Apply and dump: each flow will have 5 bytes and the usage will say which field is which.
-3. With that, "assign key" = write a 5-10 byte flow + the register
-   `01 02 ff…` + the byte `0x2D` on the button. The interface can show it as
-   "Key: Shift" without the user seeing macros.
+A key on a button is the same thing as a one-step macro: the button carries `0x2D`, its slot
+gets the record of §5-ter with **the offset in byte 5**, and the arena holds the step
+`01 00 83 <usage> <delay> <usage> 00 00`. Measured from the vendor (macro «map» = `Q` on
+button 10): slot `01 02 ff 00 00 00 04 00 0A 00`, arena `01 00 83 14 0A 14 00 00`, and the
+`01 00` that follows is the head of the next arena record, not part of the step. The
+configurator writes exactly that, so "assign a key" needs no separate path; multi-step
+macros are the same record repeated every 8 bytes (verified against the vendor's arena
+geometry, not yet on the mouse).
 
 Recipe for driving the tool under Wine (needed for those dumps):
 
@@ -515,6 +531,70 @@ docker exec g6re-run bash /work/tools/probe/ui.sh save mi_captura
 Note: the Apply button only responds if the cursor is moved over it first
 (`move 853 850` and then `click 853 850`), and the macro recorder does not capture
 synthetic keys from `xdotool`; you have to use Insert → "Please enter the key".
+
+## 5-quinquies. The macro library file (`constMacro.dat`, `PUBG3 V6.48.dat`)
+
+The tool's macros live in an ini-shaped text file that ships next to the EXE
+(`/app/constMacro.dat`). It is the *PC* copy: `DAT_VER=3`, `macroNum=N` and one line per
+macro, `<index>=<bytes>`, where **every byte is written as three decimal digits**
+(`109000105000`… = `6D 00 69 00 50 00`…). Each record is 2621 bytes:
+
+| bytes | content |
+|---|---|
+| `0x00–0x3B` | name, UTF-16LE, 30 characters (`mirror`, `first aid`, `一刀毙命`…) |
+| `0x3C` | repeat mode: `00` = Repeat On, `02` = Run until release (measured) |
+| `0x3F` | **number of steps** (`02` in `mirror`, `08` in `DPI Shift`, `03` and `01` in the sample below) |
+| `0x3D`–`0x50` | flags: `0x3D` = `01` and `0x4C` = `0A` in *every* record measured, `0x45` = `01` only in the macro that changes DPI. Undecoded |
+| `0x51` on | steps, **8 bytes each**: `01 <key> 00 00 00 00 <delay_lo> <delay_hi>` |
+
+The two sections are **not in a fixed order**: `PUBG3 V6.48.dat` starts with `[Macros]` and
+ends with `[Init]`/`DAT_VER=3`, while an export of macros written by the tool puts `[Init]`
+first. Parse by key name, never by line position.
+
+Step types seen in the vendor's own files: `01` = key down, `02` = key up, `00` = delay,
+`09` = DPI change. The key field holds a **Windows virtual-key code**, not a HID usage
+(`0xA0` LShift, `0x57` W, `0x4D` M, `0x38` `8`, `0x4F` O, `0xF1` right button = the `R-KEY`
+the tool prints); the tool converts VK → HID usage when it uploads the flow. The delay is
+**per step**, 16-bit little endian in milliseconds; a `00` step is a bare delay and carries
+nothing but that number. A release step (`02`) is written for the mouse buttons but **not**
+for the keyboard keys the tool wrote, so where those get released is still unknown.
+
+Checked against what the vendor UI shows for that file (Macro tab, tree `PUBG3 V6.48`):
+
+| macro | UI rows | bytes |
+|---|---|---|
+| mirror | R-KEY 30 ms, R-KEY 1 ms | `01 f1 … 1e 00`, `02 f1 … 01 00` |
+| run | LSHIFT 20 ms, W 4104 ms | `01 a0 … 14 00`, `01 57 … 08 10` |
+| map | M 10 ms, M 30 ms | `01 4d … 0a 00`, `02 4d … 1e 00` |
+| first aid | 8 10 ms, 8 20 ms | `01 38 … 0a 00`, `02 38 … 14 00` |
+| DPI Shift | R-KEY 10, R-KEY 10, DPI:400 254, four delays | `01 f1`, `02 f1`, `09 f8 02 … fe 00`, then `00` steps |
+
+The app only lists `macroNum` entries (the file above carries 7 but shows 5).
+
+A third sample, exported by the tool after creating two macros in an empty library
+(`macro.dat`, `macroNum=2`, `[Init]` first): `w` = key W, a 1 ms delay row, key O, and `o` =
+key O alone. The bytes are exactly the format above and fix two things that were guesses:
+
+| macro | `0x3F` | steps from `0x51` |
+|---|---|---|
+| w | `03` | `01 57 00 00 00 00 01 00` · `00 00 00 00 00 00 01 00` · `01 4f 00 00 00 00 01 00` |
+| o | `01` | `01 4f 00 00 00 00 01 00` |
+
+So a multi-step key macro written by the tool is just N steps of 8 bytes, the delay row is a
+`00` step with nothing but its delay, and **each step carries its own delay** (the tool
+stamped 1 ms on all of them, the single-key macro included). `0x3F` == step count is
+confirmed by every record measured so far (here `03`/`01`, `02` in `mirror`, `08` in
+`DPI Shift`).
+
+**Creating a key macro in the vendor app.** *Insert* only offers `Insert XY`, `Insert CPI`,
+`Insert LED`, `Insert (delay)` and `Insert before/after item`, and that submenu lists just
+**Left / Mid / Right button**: there is no keyboard entry, which is what makes the editor
+look like it cannot add keys. Keys arrive through the **recorder**, and the recorder does
+work — the `w`/`o` file above was recorded with it in the tool; what it ignores is synthetic
+keys driven from `xdotool` under Wine (`tools/probe/ui.sh`), which is why the "Please enter
+the key" dialogue never showed up in the automated captures. Existing key steps can also be
+re-pointed at another key from that same list. The configurator has no such limit: its
+Macros tab creates steps with any key plus a delay.
 
 ## 6. What remains open
 

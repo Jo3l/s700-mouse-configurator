@@ -298,21 +298,21 @@ export function toHex(bytes) {
 // Una tecla asignada a un botón es una macro de un paso. Medido del fabricante
 // (macro «map» = tecla Q, asignada al botón 10):
 //   botón   0x2d
-//   registro 01 02 ff <off_lo> <off_hi> 00 04 00 0a 00      (off = desplazamiento)
-//   flujo    01 00 83 <usage> 0a <usage> 00 00 01 00
-// Un paso de tecla ocupa 10 bytes en el flujo de 0x400: pulsar `usage`, esperar
+//   registro 01 02 ff 00 00 <off> 04 00 <len_lo> <len_hi> (off = desplazamiento)
+//   flujo    01 00 83 <usage> 0a <usage> 00 00
+// Un paso de tecla ocupa **8 bytes** en el bloque 0x400: pulsar `usage`, esperar
 // `delay` ms, soltar. Medido del fabricante (macro «map», tecla Q):
-// 01 00 83 14 0a 14 00 00 01 00. El byte 0x83 es el mismo que escribe la
-// herramienta para una macro de un paso; en otra captura («first aid») puso 0x85,
-// así que ese byte no está cerrado (§5-ter): las macros de varios pasos son la
-// extrapolación obvia (10 bytes por paso) y no están probadas en hardware.
-export const STEP_LEN = 10;
+// 01 00 83 14 0a 14 00 00 — y el registro siguiente empieza justo detrás, en
+// 0x408. El byte 0x83 es el mismo que escribe la herramienta para una macro de
+// un paso; en otra captura («first aid») puso 0x85, así que ese byte no está
+// cerrado (§5-ter).
+export const STEP_LEN = 8;
 export const KEY_MACRO_LEN = STEP_LEN;
 export const STREAM_BASE = 0x400;
 export const STREAM_SIZE = 0xa8;          // 0x400–0x4A7, lo que cabe en el bloque
 
 export function stepStream(usage, delay = 0x0a) {
-  return Uint8Array.from([0x01, 0x00, 0x83, usage & 0xff, delay & 0xff, usage & 0xff, 0x00, 0x00, 0x01, 0x00]);
+  return Uint8Array.from([0x01, 0x00, 0x83, usage & 0xff, delay & 0xff, usage & 0xff, 0x00, 0x00]);
 }
 
 export function keyMacroStream(usage) { return stepStream(usage); }
@@ -371,8 +371,18 @@ export const LED_REACT_MASK = 0xc0;   // bits 7–6: animación
 export const LED_ACTION_MASK = 0x1f;  // bits 4–0: id de la acción
 
 export function keyMacroRecord(offset, len = KEY_MACRO_LEN) {
-  return Uint8Array.from([0x01, 0x02, 0xff, offset & 0xff, (offset >> 8) & 0xff,
-                          0x00, 0x04, 0x00, len & 0xff, (len >> 8) & 0xff]);
+  return Uint8Array.from([0x01, 0x02, 0xff, 0x00, 0x00, offset & 0xff,
+                          0x04, 0x00, len & 0xff, (len >> 8) & 0xff]);
+}
+
+// Desplazamiento del flujo dentro del bloque 0x400. Va en el byte 5 del registro
+// (medido de lo que escribe el fabricante: al asignar su segunda macro deja
+// `... 00 00 08 04 00 ...`, y sus registros de multimedia llevan ese mismo byte
+// con el desplazamiento), no en los bytes 3-4, que en las macros van a cero.
+// Las imágenes de versiones anteriores del configurador lo llevaban en 3-4 y se
+// siguen leyendo.
+export function macroOffset(mem, slot) {
+  return mem[slot + 5] || (mem[slot + 3] | (mem[slot + 4] << 8));
 }
 
 // Lee la tecla de un botón con macro. Devuelve { usage, offset, len } o null.
@@ -380,7 +390,7 @@ export function readKeyMacro(mem, k) {
   const slot = MEDIA_SLOT[k];
   if (slot === undefined) return null;
   if (mem[slot] !== 0x01 || mem[slot + 1] !== 0x02 || mem[slot + 2] !== 0xff) return null;
-  const offset = mem[slot + 3] | (mem[slot + 4] << 8);
+  const offset = macroOffset(mem, slot);
   const len = mem[slot + 8] | (mem[slot + 9] << 8);
   if (!len || offset + len > 0xa8) return null;
   const base = 0x400 + offset;

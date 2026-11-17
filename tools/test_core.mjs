@@ -136,22 +136,28 @@ check("macro no se ofrece como opción editable", mb.action === null);
 
 // tecla de teclado = macro de un paso. Captura real del fabricante: macro «map»
 // (tecla Q) en el botón 10 -> botón 0x2d, registro 01 02 ff 00 00 00 04 00 0a 00,
-// flujo 01 00 83 14 0a 14 00 00 01 00
+// flujo 01 00 83 14 0a 14 00 00 (8 bytes; el registro siguiente empieza en 0x408)
 {
   const hex = (a, from, n) => [...a.slice(from, from + n)].map(b => b.toString(16).padStart(2, "0")).join(" ");
   const img = applyEdits(Uint8Array.from(mem), { buttons: { 9: "k20" } });
   check("tecla: botón marcado como macro", img[0x0e] === 0x2d);
-  check("tecla: registro igual al del fabricante",
-    hex(img, 0xdc, 10) === "01 02 ff 00 00 00 04 00 0a 00", hex(img, 0xdc, 10));
-  check("tecla: flujo igual al del fabricante",
-    hex(img, 0x400, 10) === "01 00 83 14 0a 14 00 00 01 00", hex(img, 0x400, 10));
+  check("tecla: registro con el desplazamiento en el byte 5",
+    hex(img, 0xdc, 10) === "01 02 ff 00 00 00 04 00 08 00", hex(img, 0xdc, 10));
+  check("tecla: flujo igual al del fabricante (8 bytes)",
+    hex(img, 0x400, 8) === "01 00 83 14 0a 14 00 00", hex(img, 0x400, 8));
   check("tecla: se lee de vuelta", readConfig(img).buttons[9].action === "k20");
   check("tecla: nombre en la vista", readConfig(img).buttons[9].actionName === "Key: Q");
 
   const two = applyEdits(img, { buttons: { 3: "k225" } });   // LShift en el botón 4
   check("dos teclas no se pisan",
     readConfig(two).buttons[3].action === "k225" && readConfig(two).buttons[9].action === "k20");
-  check("segunda tecla en su propio tramo", hex(two, 0x40a, 10) === "01 00 83 e1 0a e1 00 00 01 00", hex(two, 0x40a, 10));
+  // el desplazamiento del flujo va en el byte 5 del registro y en múltiplos de 8:
+  // el bloque 0x400 es una lista de registros de 8 bytes, así que el segundo
+  // flujo va en 0x408 y su registro es `01 02 ff 00 00 08 04 00 08 00`.
+  check("la segunda tecla lleva su desplazamiento en el byte 5 del registro",
+    hex(two, 0xc8, 10) === "01 02 ff 00 00 08 04 00 08 00", hex(two, 0xc8, 10));
+  check("su flujo está en 0x400 + ese desplazamiento, alineado a 8",
+    hex(two, 0x408, 8) === "01 00 83 e1 0a e1 00 00", hex(two, 0x408, 8));
 
   const back = applyEdits(two, { buttons: { 9: "12" } });
   check("volver a una función limpia el registro", back[0xdc] === 0x00 && back[0x0e] === 0x27);
@@ -159,7 +165,7 @@ check("macro no se ofrece como opción editable", mb.action === null);
 }
 
 // --- macros guardadas (varios pasos) --------------------------------------
-// Misma forma que la tecla suelta pero 10 bytes por paso; el registro lleva la
+// Misma forma que la tecla suelta pero 8 bytes por paso; el registro lleva la
 // longitud total (ver docs/PROTOCOL.md §5-ter).
 {
   const hx = (a, from, n) => [...a.slice(from, from + n)].map(b => b.toString(16).padStart(2, "0")).join(" ");
@@ -170,9 +176,9 @@ check("macro no se ofrece como opción editable", mb.action === null);
   const img = applyEdits(Uint8Array.from(mem), { buttons: { 9: "xm1" } }, macros);
   check("macro: botón marcado como macro", img[0x0e] === 0x2d);
   check("macro: el registro lleva la longitud total",
-    hx(img, 0xdc, 10) === "01 02 ff 00 00 00 04 00 14 00", hx(img, 0xdc, 10));
-  check("macro: primer paso en 0x400", hx(img, 0x400, 10) === "01 00 83 06 0a 06 00 00 01 00", hx(img, 0x400, 10));
-  check("macro: segundo paso detrás", hx(img, 0x40a, 10) === "01 00 83 07 14 07 00 00 01 00", hx(img, 0x40a, 10));
+    hx(img, 0xdc, 10) === "01 02 ff 00 00 00 04 00 10 00", hx(img, 0xdc, 10));
+  check("macro: primer paso en 0x400", hx(img, 0x400, 8) === "01 00 83 06 0a 06 00 00", hx(img, 0x400, 8));
+  check("macro: segundo paso detrás", hx(img, 0x408, 8) === "01 00 83 07 14 07 00 00", hx(img, 0x408, 8));
 
   const back = readConfig(img, macros).buttons[9];
   check("macro: se lee de vuelta con la lista", back.action === "xm1", String(back.action));
@@ -182,19 +188,21 @@ check("macro no se ofrece como opción editable", mb.action === null);
     const two = applyEdits(img, { buttons: { 3: "xm2" } }, macros);
     const c = readConfig(two, macros);
     return c.buttons[3].action === "xm2" && c.buttons[9].action === "xm1" &&
-      hx(two, 0x40a + 10, 10) === "01 00 83 2b 05 2b 00 00 01 00";
+      hx(two, 0x410, 8) === "01 00 83 2b 05 2b 00 00" &&
+      hx(two, 0xc8, 10) === "01 02 ff 00 00 10 04 00 08 00";
   })());
   check("macro: lo que no cabe en 0x400 no se escribe",
     applyEdits(Uint8Array.from(mem), { buttons: { 9: "xm1" } },
-      [{ id: "m1", name: "too long", steps: Array.from({ length: 17 }, () => ({ usage: 4, delay: 10 })) }])[0x0e] === mem[0x0e]);
+      [{ id: "m1", name: "too long", steps: Array.from({ length: 22 }, () => ({ usage: 4, delay: 10 })) }])[0x0e] === mem[0x0e]);
   check("macro: una macro que no existe no toca el botón",
     applyEdits(Uint8Array.from(mem), { buttons: { 9: "xmissing" } }, macros)[0x0e] === mem[0x0e]);
   check("macro: volver a una función limpia el registro",
     applyEdits(img, { buttons: { 9: "12" } }, macros)[0xdc] === 0x00);
-  check("macro: los 16 pasos que caben se dejan escribir", (() => {
-    const full = Array.from({ length: 16 }, () => ({ usage: 4, delay: 10 }));
+  check("macro: los 21 pasos que caben (8 B cada uno) se dejan escribir", (() => {
+    const full = Array.from({ length: 21 }, () => ({ usage: 4, delay: 10 }));
     const out = applyEdits(Uint8Array.from(mem), { buttons: { 9: "xm1" } }, [{ id: "m1", name: "full", steps: full }]);
-    return out[0x0e] === 0x2d && (out[0xdc + 9] << 8 | out[0xdc + 8]) === 160;
+    return out[0x0e] === 0x2d && (out[0xdc + 9] << 8 | out[0xdc + 8]) === 168 &&
+      out[0x400 + 20 * 8 + 2] === 0x83;      // el último paso sigue dentro del bloque
   })());
 }
 

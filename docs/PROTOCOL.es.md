@@ -346,13 +346,30 @@ Asignando a mano (pestaña Macro → elegir macro → Insert → Apply) la macro
 | byte | valor | significado |
 |---|---|---|
 | `0x0E` (botón 10) | `0x2D` | **acción = macro** (multimedia era `0x2F`, básica `0x21–0x3A`) |
-| `0xDC` (su ranura) | `01 02 ff 00 00 00 04 00 0A 00` | tipo `02` = macro, `00 00` = desplazamiento en el bloque, `0A 00` = longitud (10 bytes) |
-| `0x400` | `01 00 85 25 0A 25 00 00 01 00` | los 10 bytes del flujo de la macro |
+| `0xDC` (su ranura) | `01 02 ff 00 00 00 04 00 0A 00` | tipo `02` = macro, byte 5 = desplazamiento en el bloque, bytes 3–4 = parámetro (0 en macros, el usage de consumidor en multimedia), `0A 00` = longitud |
+| `0x400` | `01 00 85 25 0A 25 00 00 01 00` | el flujo de la macro: 8 bytes, más el `01 00` que encabeza el registro siguiente |
 
 Dentro del flujo aparecen **usages HID de teclado**: `0x25` es la tecla `8` (`0x1E`
 = `1`, `0x1F` = `2`… `0x26` = `9`), que es exactamente la tecla de esa macro. O sea
 que el ratón guarda las teclas como usages HID, y un botón puede ejecutarlas sin la
 aplicación del fabricante.
+
+**El desplazamiento va en el byte 5, no en los bytes 3–4.** El registro de la ranura es
+`01 <tipo> ff <param_lo> <param_hi> <desplazamiento> 04 00 <len_lo> <len_hi>`: los bytes
+que llevan datos son el 3–4 y guardan el *parámetro* de la acción (un usage de consumidor
+en los registros de multimedia, p. ej. `01 00 ff 23 02 b0 04 00 0A 00` para Browser =
+`0x0223`), mientras que el desplazamiento dentro de `0x400` es el byte 5, un solo byte. Lo
+confirman dos capturas: la segunda macro del fabricante deja `01 00 ff 00 00 08 04 00 00
+00` — desplazamiento `8` para la segunda y `0` para la primera — y al insertar una macro
+los seis punteros de `0x006E` suben `8`, o sea que **cada macro asignada ocupa 8 bytes al
+principio del bloque** y el resto se desplaza. Con dos asignadas sube `0x10`; en ese caso
+reserva el hueco y no escribe ningún paso (esas macros viven en el PC, no en el ratón).
+
+El configurador escribía el desplazamiento en los bytes 3–4 hasta encontrar esto, así que
+el firmware leía `0` en todos los registros y **todos los botones ejecutaban el primer
+flujo**: cuatro botones con W, Shift, O e I escribían `W`. `web/g6.js` y `web/core.js`
+escriben y leen ya el byte 5 (las imágenes antiguas se siguen leyendo por el respaldo de
+3–4).
 
 El editor de macros admite además pasos de tipo XY (movimiento), CPI (cambio de
 DPI), LED y retardos, y opciones de repetición («Run Until release», «Run Until
@@ -484,26 +501,27 @@ escribe la animación.
 
 ### Cómo lo usa el configurador web
 
-`web/core.js` codifica una macro como **10 bytes por paso** (`01 00 83 <usage>
-<retardo> <usage> 00 00 01 00`), la misma forma que la captura de un paso del
-fabricante, y la asigna al botón con `0x2D` + el registro de la ranura. El byte
-`0x83` es el de la captura «map»; en «first aid» el fabricante puso `0x85`, así
-que ese byte sigue abierto: **las macros de más de un paso son una extrapolación
-y no están probadas en el ratón**. El editor limita a 16 pasos (168 B de `0x400`,
-el bloque completo) y no escribe un flujo que no quepa.
+`web/core.js` codifica una macro como **8 bytes por paso** (`01 00 83 <usage>
+<retardo> <usage> 00 00`), el mismo registro que escribe el fabricante, y la asigna al
+botón con `0x2D` + el registro de la ranura. El bloque `0x400` es una lista de **registros
+de 8 bytes** y cada flujo tiene que empezar en uno: al insertar una macro el contenido del
+fabricante se desplaza exactamente `8` (con una macro, su primer registro queda en `0x408`;
+con dos, en `0x410`) y los cuatro punteros de `0x006E` se mueven con él, así que un flujo en
+un desplazamiento no alineado se resuelve al registro equivocado. El byte `0x83` es el de la
+captura «map»; en «first aid» el fabricante puso `0x85`, así que ese byte sigue abierto. El
+editor limita a 21 pasos (168 B de `0x400`, el bloque completo) y no escribe un flujo que no
+quepa.
 
-### Lo que falta para «asignar una tecla directamente»
+### Asignar una tecla a un botón (resuelto)
 
-El flujo de 10 bytes de «first aid» codifica **dos** pasos de tecla en 10 bytes, así
-que cada paso ocupa ~5 bytes (usage + retardo + flags), pero con una sola muestra no
-se puede fijar el reparto exacto. Plan para cerrarlo:
-
-1. Crear tres macros de un solo paso en la herramienta (tecla `A`, `Shift` solo,
-   `Ctrl+C`) con el diálogo «Please enter the key».
-2. Aplicar y volcar: cada flujo tendrá 5 bytes y el usage dirá qué campo es cuál.
-3. Con eso, «asignar tecla» = escribir un flujo de 5-10 bytes + el registro
-   `01 02 ff…` + el byte `0x2D` en el botón. La interfaz puede mostrarlo como
-   «Tecla: Shift» sin que el usuario vea macros.
+Una tecla en un botón es lo mismo que una macro de un paso: el botón lleva `0x2D`, su ranura
+recibe el registro de §5-ter con **el desplazamiento en el byte 5**, y el bloque guarda el
+paso `01 00 83 <usage> <retardo> <usage> 00 00`. Medido del fabricante (macro «map» = `Q` en
+el botón 10): ranura `01 02 ff 00 00 00 04 00 0A 00`, bloque `01 00 83 14 0A 14 00 00`, y el
+`01 00` que viene detrás es la cabecera del siguiente registro del bloque, no parte del paso.
+El configurador escribe exactamente eso, así que «asignar una tecla» no necesita un camino
+aparte; las macros de varios pasos son ese mismo registro repetido cada 8 bytes (geometría
+contrastada con el bloque del fabricante, todavía no probada en el ratón).
 
 Receta para manejar la herramienta bajo Wine (necesaria para esos volcados):
 
@@ -517,6 +535,74 @@ docker exec g6re-run bash /work/tools/probe/ui.sh save mi_captura
 Ojo: el botón Apply sólo responde si antes se mueve el cursor encima
 (`move 853 850` y después `click 853 850`), y el grabador de macros no captura
 teclas sintéticas de `xdotool`; hay que usar Insert → «Please enter the key».
+
+## 5-quinquies. El fichero de la biblioteca de macros (`constMacro.dat`, `PUBG3 V6.48.dat`)
+
+Las macros de la herramienta viven en un fichero de texto con forma de ini que va junto al
+EXE (`/app/constMacro.dat`). Es la copia del *PC*: `DAT_VER=3`, `macroNum=N` y una línea
+por macro, `<índice>=<bytes>`, donde **cada byte se escribe con tres dígitos decimales**
+(`109000105000`… = `6D 00 69 00 50 00`…). Cada registro mide 2621 bytes:
+
+| bytes | contenido |
+|---|---|
+| `0x00–0x3B` | nombre en UTF-16LE, 30 caracteres (`mirror`, `first aid`, `一刀毙命`…) |
+| `0x3C` | modo de repetición: `00` = Repeat On, `02` = Run until release (medido) |
+| `0x3F` | **número de pasos** (`02` en `mirror`, `08` en `DPI Shift`, `03` y `01` en la muestra de abajo) |
+| `0x3D`–`0x50` | banderas: `0x3D` = `01` y `0x4C` = `0A` en *todos* los registros medidos, `0x45` = `01` sólo en la macro que cambia DPI. Sin descifrar |
+| `0x51` en adelante | pasos, **8 bytes cada uno**: `01 <tecla> 00 00 00 00 <delay_lo> <delay_hi>` |
+
+Los dos bloques **no van en un orden fijo**: `PUBG3 V6.48.dat` empieza por `[Macros]` y
+termina con `[Init]`/`DAT_VER=3`, mientras que una exportación hecha por la herramienta
+escribe `[Init]` primero. Se lee por nombre de clave, nunca por posición de línea.
+
+Tipos de paso vistos en los ficheros del fabricante: `01` = tecla pulsada, `02` = tecla
+soltada, `00` = retardo, `09` = cambio de DPI. El campo de tecla lleva un **código de
+tecla virtual de Windows**, no un usage HID (`0xA0` LShift, `0x57` W, `0x4D` M, `0x38` `8`,
+`0x4F` O, `0xF1` botón derecho = el `R-KEY` que muestra la herramienta); la herramienta
+convierte VK → usage HID al subir el flujo. El retardo es **por paso**, de 16 bits en little
+endian, en milisegundos; un paso `00` es un retardo puro y no lleva nada más que ese número.
+La herramienta escribe paso de soltada (`02`) para los botones del ratón pero **no** para
+las teclas de teclado que ella misma crea, así que dónde se sueltan ésas sigue sin saberse.
+
+Comprobado contra lo que muestra la UI del fabricante para ese fichero (pestaña Macro, árbol
+`PUBG3 V6.48`):
+
+| macro | filas de la UI | bytes |
+|---|---|---|
+| mirror | R-KEY 30 ms, R-KEY 1 ms | `01 f1 … 1e 00`, `02 f1 … 01 00` |
+| run | LSHIFT 20 ms, W 4104 ms | `01 a0 … 14 00`, `01 57 … 08 10` |
+| map | M 10 ms, M 30 ms | `01 4d … 0a 00`, `02 4d … 1e 00` |
+| first aid | 8 10 ms, 8 20 ms | `01 38 … 0a 00`, `02 38 … 14 00` |
+| DPI Shift | R-KEY 10, R-KEY 10, DPI:400 254, cuatro retardos | `01 f1`, `02 f1`, `09 f8 02 … fe 00`, luego pasos `00` |
+
+La aplicación sólo lista `macroNum` entradas (el fichero de arriba trae 7 y muestra 5).
+
+Una tercera muestra, exportada por la herramienta tras crear dos macros en una biblioteca
+vacía (`macro.dat`, `macroNum=2`, `[Init]` primero): `w` = tecla W, una fila de retardo de
+1 ms, tecla O, y `o` = la tecla O sola. Los bytes son exactamente el formato de arriba y
+fijan dos cosas que eran suposiciones:
+
+| macro | `0x3F` | pasos desde `0x51` |
+|---|---|---|
+| w | `03` | `01 57 00 00 00 00 01 00` · `00 00 00 00 00 00 01 00` · `01 4f 00 00 00 00 01 00` |
+| o | `01` | `01 4f 00 00 00 00 01 00` |
+
+Así que una macro de teclas de varios pasos escrita por la herramienta es simplemente N
+pasos de 8 bytes, la fila de retardo es un paso `00` sin nada más que su retardo, y **cada
+paso lleva su propio retardo** (la herramienta puso 1 ms en todos, incluida la macro de una
+sola tecla). Que `0x3F` sea el número de pasos lo confirman todos los registros medidos
+(aquí `03`/`01`, `02` en `mirror`, `08` en `DPI Shift`).
+
+**Crear una macro de tecla en la aplicación del fabricante.** *Insert* sólo ofrece `Insert
+XY`, `Insert CPI`, `Insert LED`, `Insert (delay)` e `Insert before/after item`, y ese submenú
+lista únicamente **Left / Mid / Right button**: no hay entrada de teclado, y eso es lo que
+hace parecer que el editor no puede añadir teclas. Las teclas entran por el **grabador**, y
+el grabador sí funciona: el fichero `w`/`o` de arriba se grabó con él en la herramienta. Lo
+que ignora son las teclas sintéticas lanzadas con `xdotool` bajo Wine
+(`tools/probe/ui.sh`), y por eso el diálogo «Please enter the key» nunca salió en las
+capturas automáticas. Los pasos de tecla que ya existen también se pueden reapuntar a otra
+tecla desde esa lista. El configurador no tiene ese límite: su pestaña Macros crea pasos con
+cualquier tecla y su retardo.
 
 ## 6. Qué queda abierto
 

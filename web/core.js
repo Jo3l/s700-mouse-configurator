@@ -5,7 +5,7 @@
 import {
   KEY_ADDR, buttonAddr, ACTION_CODE, CODE_ACTION, ACTION_NAME, dpiCode, parseDpi, DPI_TABLE,
   WRITE_BLOCKS, MEDIA, MEDIA_CODE, MEDIA_SLOT, USAGE_MEDIA, mediaRecord, readMedia, MACRO_CODE, KEY_CODES,
-  KEY_MACRO_LEN, STEP_LEN, STREAM_BASE, STREAM_SIZE, stepStream, keyMacroRecord, keyName,
+  KEY_MACRO_LEN, STEP_LEN, STREAM_BASE, STREAM_SIZE, stepStream, keyMacroRecord, macroOffset, keyName,
   LED, LED_DPI_COUNT, LED_MAX, LED_EFFECTS, LED_REACT_SHIFT, LED_REACT_ON, LED_REACT_MASK,
 } from "./g6.js";
 
@@ -66,7 +66,7 @@ export function describeAction(value, mem, k, macros = []) {
 // ---------------------------------------------------------------- macros
 // Una macro es una lista de pasos { usage, delay } que el ratón ejecuta solo
 // (guardada en el bloque 0x400; ver docs/PROTOCOL.md §5-ter).
-export const MAX_STEPS = Math.floor(STREAM_SIZE / STEP_LEN);   // 16
+export const MAX_STEPS = Math.floor(STREAM_SIZE / STEP_LEN);   // 21 (8 bytes por paso)
 
 const stepList = macro => (macro && Array.isArray(macro.steps) ? macro.steps : [])
   .filter(s => s && Number.isFinite(Number(s.usage)));
@@ -87,7 +87,7 @@ export function readMacroStream(mem, k) {
   const slot = MEDIA_SLOT[k];
   if (slot === undefined) return null;
   if (mem[slot] !== 0x01 || mem[slot + 1] !== 0x02 || mem[slot + 2] !== 0xff) return null;
-  const offset = mem[slot + 3] | (mem[slot + 4] << 8);
+  const offset = macroOffset(mem, slot);
   const len = mem[slot + 8] | (mem[slot + 9] << 8);
   if (!len || offset + len > STREAM_SIZE) return null;
   const steps = [];
@@ -305,7 +305,7 @@ function usedStream(mem, skip) {
     if (mem[KEY_ADDR[k]] !== MACRO_CODE) continue;
     const slot = MEDIA_SLOT[k];
     if (mem[slot] !== 0x01 || mem[slot + 1] !== 0x02 || mem[slot + 2] !== 0xff) continue;
-    const off = mem[slot + 3] | (mem[slot + 4] << 8);
+    const off = macroOffset(mem, slot);
     const len = mem[slot + 8] | (mem[slot + 9] << 8);
     if (len) used.push([off, off + len]);
   }
@@ -313,7 +313,9 @@ function usedStream(mem, skip) {
 }
 
 function freeOffset(used, len) {
-  for (let off = 0; off + len <= 0xa8; off++)
+  // de 8 en 8: el bloque 0x400 es una lista de registros de 8 bytes y el ratón
+  // resolvía mal un flujo que empezase a mitad de registro.
+  for (let off = 0; off + len <= STREAM_SIZE; off += STEP_LEN)
     if (used.every(([a, b]) => off + len <= a || off >= b)) return off;
   return -1;
 }
