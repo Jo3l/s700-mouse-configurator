@@ -19,6 +19,8 @@ tools/probe/debug/
 
 # software del fabricante: tiene copyright, no se publica
 original/
+# muestras de la biblioteca de macros del fabricante (material suyo, se quedan fuera)
+/*.dat
 
 # claves TLS de desarrollo
 certs/
@@ -30,3 +32,4 @@ native/target/
 # dependencias de análisis traídas con pip --target
 tools/pylibs/
 node_modules/
+core.*

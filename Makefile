@@ -1,7 +1,7 @@
 # Atajos del proyecto
 PY ?= python3
 
-.PHONY: build test serve debug docker native native-linux native-run clean
+.PHONY: build test serve docker native native-linux appimage native-run clean
 
 build:           ## empaqueta dist/S700-configurador.html (un solo fichero)
 	$(PY) tools/build.py
@@ -18,9 +18,6 @@ test:            ## pruebas de protocolo, códec, core, transporte y UI
 serve:           ## configurador web en http://localhost:8099/web/
 	$(PY) -m http.server 8099 --bind 127.0.0.1
 
-debug:           ## servidor de depuración con API en vivo (http 8099, https 8443)
-	$(PY) tools/debugd.py 8099 --also-tls 8443
-
 native:          ## binario nativo del configurador (native/, ver docs/NATIVE.md)
 	cd native && cargo build --release
 
@@ -36,6 +33,9 @@ native-linux:    ## compila el binario nativo en un contenedor
 		. "$$HOME/.cargo/env"; \
 		cargo build --release'
 	docker run --rm -v "$(CURDIR):/w" ubuntu:22.04 chown -R $(shell id -u):$(shell id -g) /w/native/target
+
+appimage:        ## AppImage autocontenido para Linux x86_64 (lleva WebKitGTK dentro)
+	./native/build-appimage.sh
 
 native-run: native           ## abre la UI servida por el binario nativo
 	./native/target/release/s700-host

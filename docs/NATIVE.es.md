@@ -44,6 +44,29 @@ s700-host [--port N] [--no-open] [--browser] [--list]
 
 Las tres sirven la misma UI: `web/` no se duplica ni se adapta.
 
+## Un solo fichero para Linux (AppImage)
+
+```
+make appimage      # dist/S700-configurator-x86_64.AppImage (~80 MB)
+```
+
+`native/build-appimage.sh` lo construye dentro de `ubuntu:22.04` y mete en el
+paquete WebKitGTK, su *injected bundle*, la pila GTK/GLib y las librerías de X11
+con `linuxdeploy`. Dos detalles son los que lo hacen funcionar:
+
+- **WebKitGTK no tiene variable de relocalización**: el directorio de sus procesos
+  auxiliares (`WebKitWebProcess`, `WebKitNetworkProcess`, `WebKitGPUProcess`) va
+  como ruta absoluta compilada. El build la reescribe a `./usr/lib/webkit2gtk-4.1`
+  (misma longitud, relleno con NUL) y `AppRun` arranca con el AppImage como
+  directorio de trabajo, así que la ruta relativa resuelve dentro del paquete.
+- **GL, fuentes y permisos siguen en el sistema**: un AppImage no debe llevar los
+  drivers de GPU, así que `libGL`/`libEGL`/`libGLESv2` y las fuentes salen del
+  escritorio (cualquiera las tiene). El kernel sigue necesitando la regla udev para
+  `/dev/hidraw*`; el binario se ofrece a instalarla.
+
+Verificado en un contenedor `ubuntu:22.04` pelado (sin WebKitGTK ni GTK) bajo Xvfb:
+la ventana abre, la página se pinta y el host lista el ratón.
+
 ## Cómo encaja sin tocar la UI
 
 `web/bridge.js` es un enchufe: si `window.__S700_API__` existe (sólo lo pone el

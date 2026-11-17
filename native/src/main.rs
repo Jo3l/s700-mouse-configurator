@@ -24,7 +24,6 @@ const APP: &str = include_str!("../../web/app.js");
 const G6: &str = include_str!("../../web/g6.js");
 const CORE: &str = include_str!("../../web/core.js");
 const STORE: &str = include_str!("../../web/storage.js");
-const DEBUGJS: &str = include_str!("../../web/debug.js");
 const IMAGE: &str = include_str!("../../web/default_image.js");
 const BRIDGE: &str = include_str!("../../web/bridge.js");
 const MOUSE_PNG: &[u8] = include_bytes!("../../web/mouse.png");
@@ -566,7 +565,6 @@ fn asset(path: &str) -> Option<(&'static str, &'static [u8])> {
         "/g6.js" => (js, G6.as_bytes()),
         "/core.js" => (js, CORE.as_bytes()),
         "/storage.js" => (js, STORE.as_bytes()),
-        "/debug.js" => (js, DEBUGJS.as_bytes()),
         "/default_image.js" => (js, IMAGE.as_bytes()),
         "/bridge.js" => (js, BRIDGE.as_bytes()),
         "/mouse.png" => ("image/png", MOUSE_PNG),

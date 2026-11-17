@@ -173,9 +173,9 @@ function loadDefaults(pending = true) {
 
 // Este firmware no contesta a GetFeature (§4), así que no hay nada que leer: la
 // base es la imagen guardada en el navegador o la de fábrica. La función existe
-// porque la llama el camino de conexión y la orden «read» de tools/debugd.py;
-// antes no estaba definida y conectar terminaba en «connect error: read is not
-// defined» aunque el dispositivo se hubiera abierto bien.
+// porque la llama el camino de conexión; antes no estaba definida y conectar
+// terminaba en «connect error: read is not defined» aunque el dispositivo se
+// hubiera abierto bien.
 async function read() {
   const msg = "nothing to read: this mouse does not answer GetFeature (see PROTOCOL §4)";
   logText("read · " + msg);
@@ -656,6 +656,12 @@ function backup() {
   // viven en state.edits, así que sin consolidarlos el fichero salía viejo.
   const data = {
     tool: "s700-webhid", version: 1, date: new Date().toISOString(), size: MEM_SIZE,
+    // el sello y el estado van en el fichero: así se sabe qué build lo generó y si
+    // llevaba cambios sin enviar, sin tener que preguntarlo.
+    build: window.__S700_BUILD__ || "dev",
+    dirty: !!state.dirty,
+    pendingEdits: Object.keys(state.edits.buttons || {}).length,
+    connected: !!state.dev,
     mem: g6.toHex(imgNow()),
     macros: state.macros,   // el flujo ya va en la imagen; esto es nombre y pasos
   };
@@ -732,9 +738,7 @@ function initTabs() {
     };
   });
   window.addEventListener("hashchange", () => selectTab(PANELS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "main"));
-  // con ?debug=1 (tools/debugd.py) se abre directamente la instrumentación
-  const q = new URLSearchParams(location.search).get("debug");
-  const wanted = location.hash.slice(1) || (q && q !== "0" ? "debug" : "main");
+  const wanted = location.hash.slice(1) || "main";
   selectTab(PANELS.includes(wanted) ? wanted : "main");
 }
 
@@ -1228,17 +1232,10 @@ navigator.hid?.addEventListener("disconnect", e => {
   if (state.dev && e.device === state.dev) { state.dev = null; state.ready = false; setStatus("disconnected", "warn"); renderDevice(); render(); }
 });
 
-// Hook de depuración: expone el estado vivo del configurador para poder
-// mirarlo desde la consola o desde web/debug.js (lo inyecta tools/debugd.py al
-// servir la página; dist/S700-configurador.html no lo lleva).
-window.__s700 = {
-  state, g6,
-  macros: () => state.macros,
-  cfg: () => readConfig(imgNow(), state.macros),
-  render: () => render(),
-  read: () => read(),
-  apply: () => apply(),
-};
+// sello del build que está corriendo, siempre visible en Debug: si aquí pone una
+// fecha vieja, el navegador sirvió una copia de caché y cualquier prueba mide el
+// código anterior.
+$("buildInfo").textContent = "build " + (window.__S700_BUILD__ || "dev (sin sellar)");
 
 initTabs();
 renderHotspots();

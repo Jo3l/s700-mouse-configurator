@@ -60,6 +60,22 @@ jobs:
           name: windows
           path: s700-host-windows-x86_64.exe
 
+  appimage:
+    # Un solo fichero para Linux: lleva dentro WebKitGTK, sus procesos auxiliares
+    # y las librerías que linuxdeploy deja fuera. Se construye en un contenedor
+    # Ubuntu 22.04 igual que el binario suelto.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: AppImage x86_64
+        run: ./native/build-appimage.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: dist/S700-configurator-x86_64.AppImage
+
   extras:
     runs-on: ubuntu-22.04
     steps:
@@ -81,7 +97,7 @@ jobs:
             native/99-s700-hid.rules
 
   release:
-    needs: [linux, windows, extras]
+    needs: [linux, appimage, windows, extras]
     runs-on: ubuntu-22.04
     if: startsWith(github.ref, 'refs/tags/')
     steps:
@@ -92,7 +108,7 @@ jobs:
       - name: Juntar los ficheros
         run: |
           find artifacts -type f -exec cp {} . \;
-          ls -la S700-configurator.html 99-s700-hid.rules s700-host-linux-x86_64 s700-host-windows-x86_64.exe
+          ls -la S700-configurator.html 99-s700-hid.rules s700-host-linux-x86_64 s700-host-windows-x86_64.exe S700-configurator-x86_64.AppImage
 
       - uses: softprops/action-gh-release@v2
         with:
@@ -100,5 +116,6 @@ jobs:
           files: |
             s700-host-linux-x86_64
             s700-host-windows-x86_64.exe
+            S700-configurator-x86_64.AppImage
             S700-configurator.html
             99-s700-hid.rules

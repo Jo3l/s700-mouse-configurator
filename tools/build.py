@@ -69,6 +69,17 @@ return {{ {", ".join(store_names)} }};
     b64 = base64.b64encode(open(img, "rb").read()).decode()
     html = html.replace('src="./mouse.png"', 'src="data:image/png;base64,%s"' % b64)
 
+    # sello de compilación: la página lo muestra en Debug, así se sabe de un
+    # vistazo si el navegador está sirviendo una copia vieja de caché.
+    import subprocess, time
+    try:
+        rev = subprocess.run(["git", "-C", ROOT, "rev-parse", "--short", "HEAD"],
+                             capture_output=True, text=True, timeout=5).stdout.strip() or "nogit"
+    except Exception:
+        rev = "nogit"
+    stamp = time.strftime("%Y-%m-%d %H:%M") + " · " + rev
+    html = html.replace("</head>", '<script>window.__S700_BUILD__ = "%s";</script>\n</head>' % stamp)
+
     html = html.replace('<link rel="stylesheet" href="./style.css">', "<style>\n" + css + "\n</style>")
     html = html.replace('<script type="module" src="./app.js"></script>',
                         "<script>\n" + bundle + "\n</script>")

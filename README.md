@@ -15,6 +15,7 @@
 |---|---|
 | **use it without downloading anything** | **<https://jo3l.github.io/s700-mouse-configurator/>** — the tool served as a web page (WebHID); open it and press *Connect mouse* |
 | **Windows** | [`s700-host-windows-x86_64.exe`](https://github.com/Jo3l/s700-mouse-configurator/releases/latest) — double click and that is it: it opens its **own window** (no tabs, no address bar) with the UI loaded and talks to the mouse itself; no permissions, no installer |
+| **Linux, nothing to install** | [`S700-configurator-x86_64.AppImage`](https://github.com/Jo3l/s700-mouse-configurator/releases/latest) — one file, `chmod +x` and run: it carries WebKitGTK inside |
 | **Linux** | [`s700-host-linux-x86_64`](https://github.com/Jo3l/s700-mouse-configurator/releases/latest) — run it; if it cannot open the mouse it offers to install the udev rule and asks for your password once |
 | **a single HTML file** | `S700-configurator.html` from the release: double click it in Chrome/Edge/Brave, no server needed |
 
@@ -62,6 +63,7 @@ The interface is **identical** in all three; no code is duplicated.
 | **Web page** (`make serve` + Chrome) | WebHID permission per origin + udev rule on Linux | a Chromium browser | 0 |
 | **Single HTML file** (`make build`) | same (it opens as `file://`) | a Chromium browser | ~520 KB |
 | **Native host** (`make native`) | **nothing on Windows**; udev rule on Linux | Windows: nothing (WebView2 ships with Edge). Linux: `libwebkit2gtk-4.1-0`, `libgtk-3-0` | ~1.3 MB |
+| **AppImage** (`make appimage`) | udev rule on Linux | nothing but a desktop (GL and fonts, which every one has) | ~80 MB |
 
 The native host (`native/`) is a dependency-free Rust binary that embeds the UI,
 serves it on `127.0.0.1` and talks to the HID device itself: no WebHID, no browser
