@@ -1,0 +1,80 @@
+name: release
+
+# Etiqueta -> binarios + configurador de un solo fichero, adjuntos a la release.
+# El .exe y el binario de Linux salen de aquí, así que no hace falta que nadie
+# los compile: se descargan de la página de releases.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:        # sólo compila y deja los artefactos, sin release
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux x86_64 (glibc 2.31: Debian 11+, Ubuntu 20.04+)
+        run: |
+          # se compila dentro de bullseye para que el binario no exija una glibc
+          # más nueva que la del runner
+          docker run --rm -v "$PWD:/w" -w /w/native rust:1-slim-bullseye \
+            cargo build --release --offline
+          sudo chown -R "$(id -u):$(id -g)" native/target
+          install -m 755 native/target/release/s700-host s700-host-linux-x86_64
+
+      - name: Windows x86_64 (PE32+, mingw)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-mingw-w64-x86-64
+          rustup target add x86_64-pc-windows-gnu
+          cargo build --release --offline \
+            --manifest-path native/Cargo.toml --target x86_64-pc-windows-gnu
+          cp native/target/x86_64-pc-windows-gnu/release/s700-host.exe s700-host-windows-x86_64.exe
+
+      - name: Configurador de un solo fichero
+        run: |
+          make build
+          cp dist/S700-configurador.html S700-configurator.html
+
+      - name: Pruebas
+        run: make test
+
+      - name: Artefactos (siempre, también sin etiqueta)
+        uses: actions/upload-artifact@v4
+        with:
+          name: s700-host
+          path: |
+            s700-host-linux-x86_64
+            s700-host-windows-x86_64.exe
+            S700-configurator.html
+            native/99-s700-hid.rules
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            Configurador del ratón HXSJ S700 «G6» — descarga y ejecuta, sin instalar nada.
+
+            * `s700-host-windows-x86_64.exe` — Windows 10/11, doble clic. Abre la interfaz en
+              <http://127.0.0.1:8760/> y habla con el ratón él mismo: no hay permisos que dar.
+            * `s700-host-linux-x86_64` — Linux x86_64. Antes, una vez:
+              `sudo cp 99-s700-hid.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger`
+            * `S700-configurator.html` — un solo fichero: ábrelo en Chrome/Edge/Brave y pulsa
+              *Connect mouse* (WebHID; no necesita el binario).
+            * `99-s700-hid.rules` — permiso del nodo `/dev/hidraw*` para Linux.
+
+            O usa la versión servida: <https://jo3l.github.io/s700-mouse-configurator/>
+
+            Haz un backup desde la pestaña *Backup* antes de escribir nada.
+          files: |
+            s700-host-linux-x86_64
+            s700-host-windows-x86_64.exe
+            S700-configurator.html
+            native/99-s700-hid.rules

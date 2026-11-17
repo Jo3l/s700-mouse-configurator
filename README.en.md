@@ -4,8 +4,25 @@
 ![platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20browser-informational)
 ![native host](https://img.shields.io/badge/native%20host-~820%20KB-success)
 ![no dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)
+[![latest release](https://img.shields.io/github/v/release/Jo3l/s700-mouse-configurator)](https://github.com/Jo3l/s700-mouse-configurator/releases/latest)
+[![downloads](https://img.shields.io/github/downloads/Jo3l/s700-mouse-configurator/total)](https://github.com/Jo3l/s700-mouse-configurator/releases)
 
 **Leer en español: [README.md](README.md)**
+
+## Download and run in a minute
+
+| I want to… | How |
+|---|---|
+| **use it without downloading anything** | **<https://jo3l.github.io/s700-mouse-configurator/>** — the tool served as a web page (WebHID); open it and press *Connect mouse* |
+| **Windows** | [`s700-host-windows-x86_64.exe`](https://github.com/Jo3l/s700-mouse-configurator/releases/latest) — double click, it opens the UI on `127.0.0.1:8760` and talks to the mouse itself; no permissions, no installer |
+| **Linux** | [`s700-host-linux-x86_64`](https://github.com/Jo3l/s700-mouse-configurator/releases/latest) + `99-s700-hid.rules` (once: `sudo cp 99-s700-hid.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules`) |
+| **a single HTML file** | `S700-configurator.html` from the release: double click it in Chrome/Edge/Brave, no server needed |
+
+The binaries are built by GitHub Actions on every release
+([`.github/workflows/release.yml`](.github/workflows/release.yml)) and the web page is
+published to GitHub Pages from `main`
+([`.github/workflows/pages.yml`](.github/workflows/pages.yml)). Back up from the
+*Backup* tab before writing to the mouse.
 
 Free, **driver-free, install-nothing** configurator for the **HXSJ S700** gaming
 mouse (also sold as **«G6»** or *S700 Gaming Mouse*), a cheap 10-button wired mouse
