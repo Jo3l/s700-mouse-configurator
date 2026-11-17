@@ -9,9 +9,13 @@ publish = false
 name = "s700-host"
 path = "src/main.rs"
 
-# Sin dependencias: el binario se compila sin red y sin librerías del sistema
-# (hidraw en Linux, hid.dll en Windows) más allá de la libc.
+# El HID va a pelo (hidraw en Linux, hid.dll en Windows); lo único de fuera es
+# el motor de la ventana: wry sobre tao (WebView2 en Windows, WebKitGTK en Linux).
+# En Linux hace falta libwebkit2gtk-4.1-dev y libgtk-3-dev para compilar, y
+# libwebkit2gtk-4.1-0 + libgtk-3-0 para ejecutar.
 [dependencies]
+wry = "0.57"
+tao = "0.37"
 
 [profile.release]
 opt-level = "z"

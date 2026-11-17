@@ -8,22 +8,28 @@ not the project's:
 2. It only works in browsers with WebHID (Chrome, Edge, Brave…), and from
    `file://` not even that.
 
-`native/` is a small binary (no dependencies, no installer) that does the
-same but with no browser in between: it serves the UI from inside itself on
-`127.0.0.1`, opens the browser you already have and speaks HID itself.
+`native/` is a small binary (one window, no installer) that does the same but
+with no browser in between: it serves the UI from inside itself on `127.0.0.1`,
+shows it in its own window with the system WebView — WebView2 on Windows,
+WebKitGTK on Linux — and speaks HID itself.
 
 ```
-make native        # native/target/release/s700-host (~820 KB)
-make native-run    # starts it and opens the tab
+make native        # native/target/release/s700-host (~1.3 MB)
+make native-run    # builds it and opens the window
+
+# Linux builds need the WebKitGTK headers once (runtime needs the .so):
+sudo apt install pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev
 ```
 
 ```
-s700-host [--port N] [--no-open] [--list]
+s700-host [--port N] [--no-open] [--browser] [--list]
 
   --port N    local port (8760 by default). Pin it: the browser stores
               changes per origin, so changing port is changing
               storage.
-  --no-open   do not open the browser
+  --no-open   do not open anything
+  --browser   open the UI as a normal tab in the default browser instead of
+              its own window
   --list      list the mouse interfaces and exit
 ```
 
@@ -33,7 +39,7 @@ s700-host [--port N] [--no-open] [--list]
 |---|---|---|---|
 | `make serve` + Chrome | WebHID dialog + udev rule on Linux | a browser with WebHID | 0 |
 | `dist/S700-configurador.html` | same (it opens as `file://`) | same | ~520 KB |
-| `make native` | **nothing on Windows**; udev on Linux | nothing installed | ~820 KB |
+| `make native` | **nothing on Windows**; udev on Linux | Windows: nothing (WebView2 ships with Edge). Linux: `libwebkit2gtk-4.1-0` + `libgtk-3-0` | ~1.3 MB |
 
 All three serve the same UI: `web/` is not duplicated or adapted.
 
@@ -141,17 +147,20 @@ Not tested yet:
 - **the real write** to the mouse from the binary: this user has no
   permission on `/dev/hidraw1` (0600 root) and there is no root on the machine. It
   is the only stretch left: install the rule and press Apply.
-- **Windows**: not even compiled.
+- **Windows**: it compiles in CI (MSVC, WebView2) but it has never been run: neither
+the window nor the HID write is verified there.
 
-## What about a webview of its own (Tauri, Electron, Wails)?
+## Why a system webview and not Electron
 
-- **Tauri/Wails**: the system webview is WebView2 (Chromium) or WebKitGTK, and
-  neither implements WebHID: the current UI would not work inside as it is. The
-  very same native bridge that is already in `native/` would have to be built, so
-  the webview would only add weight and dependencies (webkit2gtk, libsoup…).
-- **Electron**: it does ship WebHID and the dialog can be removed
-  (`select-hid-device`), but it is ~90–100 MB per platform and on Linux it still
-  needs the udev rule.
+The window is `wry` over `tao`: WebView2 (Chromium) on Windows, WebKitGTK on
+Linux. Neither engine implements WebHID, which is exactly why the HTTP bridge
+exists — the page talks to this process with `fetch`, so the engine only has to
+render HTML. That is what makes the window cheap:
 
-For this UI, which is plain HTML with no frameworks, the 820 KB host is the
-cheapest thing: the "browser" is the one the user already has.
+- no Electron: ~90–100 MB per platform, and on Linux it still needs the udev rule;
+- no Tauri either: same engines plus a config/plugin framework this project does
+  not use, and the app is already one binary embedding `web/`;
+- cost of the choice: the Linux binary links `libwebkit2gtk-4.1` and `libgtk-3`
+  at run time (Windows needs nothing: WebView2 ships with Edge). If the WebView
+  cannot be created, the host falls back to an app window of Edge/Chrome, and
+  `--browser` opens a normal tab; `--no-open` still serves headless.

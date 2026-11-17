@@ -1,3 +1,5 @@
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 //! Host nativo del configurador S700.
 //!
 //! Sirve la UI de web/ desde dentro del binario (127.0.0.1, sólo local), abre
@@ -5,13 +7,15 @@
 //! lugar de navigator.hid usa el enchufe de web/bridge.js, que este proceso
 //! inyecta al servir el HTML.
 //!
-//! Sin dependencias externas: HTTP a mano sobre std, hidraw en Linux e hid.dll
-//! en Windows.
+//! HTTP a mano sobre std, hidraw en Linux e hid.dll en Windows; la ventana es
+//! un WebView del sistema (WebView2 / WebKitGTK) vía wry.
 
 mod hid;
+mod ui;
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 const INDEX: &str = include_str!("../../web/index.html");
@@ -35,8 +39,12 @@ struct Host {
 }
 
 fn main() {
+    #[cfg(windows)]
+    attach_console();
+
     let mut port = DEFAULT_PORT;
     let mut launch = true;
+    let mut app_window = true;
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
     while i < args.len() {
@@ -54,6 +62,7 @@ fn main() {
                 }
             }
             "--no-open" => launch = false,
+            "--browser" => app_window = false,
             "--list" => {
                 let devs = hid::enumerate();
                 if devs.is_empty() {
@@ -84,16 +93,32 @@ fn main() {
         }
         i += 1;
     }
-    serve(port, launch);
+    serve(port, launch, app_window);
+}
+
+/// En Windows release el .exe es de subsistema GUI (no abre consola al hacer
+/// doble clic). Si lo lanzas desde cmd, se engancha a esa consola para que
+/// --list, --help y --install-rule sigan escribiendo donde toca.
+#[cfg(windows)]
+fn attach_console() {
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn AttachConsole(process_id: u32) -> i32;
+    }
+    const ATTACH_PARENT_PROCESS: u32 = 0xffff_ffff;
+    unsafe {
+        AttachConsole(ATTACH_PARENT_PROCESS);
+    }
 }
 
 fn help() {
     println!(
-        "s700-host [--port N] [--no-open] [--list] [--install-rule]
+        "s700-host [--port N] [--no-open] [--browser] [--list] [--install-rule]
 
   --port N        local port ({DEFAULT_PORT} by default); keep it so the browser
                   storage (localStorage) stays the same
-  --no-open       do not open the browser
+  --no-open       do not open anything
+  --browser       open the UI in the default browser instead of the app window
   --list          list the mouse's HID interfaces and exit
   --install-rule  Linux only: write the udev rule that lets this user open
                   /dev/hidraw*, then reload udev; asks for your password with
@@ -225,7 +250,7 @@ fn install_rule_json() -> String {
     }
 }
 
-fn serve(port: u16, launch: bool) {
+fn serve(port: u16, launch: bool, app_window: bool) {
     let listener = match TcpListener::bind(("127.0.0.1", port)) {
         Ok(l) => l,
         Err(e) => {
@@ -248,9 +273,29 @@ fn serve(port: u16, launch: bool) {
     }
     println!("  Ctrl+C to stop");
 
+    if launch && app_window {
+        // La ventana (WebView) tiene que correr en el hilo principal; el HTTP que
+        // sirve la UI y el puente HID va en otro.
+        let serving = Arc::clone(&host);
+        std::thread::spawn(move || accept_loop(listener, serving));
+        if let Err(e) = ui::run(&url) {
+            eprintln!("  webview: {e}");
+            eprintln!("  webview: no hay WebView utilizable; abro una ventana de Edge/Chrome");
+            launch_app(&url);
+        }
+        // la ventana manda: cuando se cierre, el proceso termina
+        loop {
+            std::thread::park();
+        }
+    }
+
     if launch {
         open_browser(&url);
     }
+    accept_loop(listener, host);
+}
+
+fn accept_loop(listener: TcpListener, host: Arc<Host>) {
     for conn in listener.incoming() {
         match conn {
             Ok(stream) => {
@@ -270,6 +315,101 @@ fn open_browser(url: &str) {
     #[cfg(windows)]
     let _ = std::process::Command::new("cmd").args(["/C", "start", "", url]).spawn();
     let _ = url;
+}
+
+// Navegadores de la familia Chromium: en modo --app abren una ventana sin
+// pestañas ni barra de direcciones, que es lo que se espera de un configurador.
+#[cfg(target_os = "linux")]
+const BROWSER_NAMES: &[&str] = &[
+    "microsoft-edge", "microsoft-edge-stable", "google-chrome", "google-chrome-stable",
+    "chromium", "chromium-browser", "brave-browser", "vivaldi", "vivaldi-stable",
+];
+
+// Perfil propio de la ventana: así lo que se lanza es una instancia única y,
+// cuando cierras la ventana, este proceso también termina (no queda de fondo).
+fn profile_dir() -> Option<PathBuf> {
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
+            .map(|base| base.join("s700-host/browser"))
+    }
+    #[cfg(windows)]
+    {
+        std::env::var_os("LOCALAPPDATA").map(|b| PathBuf::from(b).join("s700-host\\browser"))
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn find_browser() -> Option<PathBuf> {
+    if let Some(explicit) = std::env::var_os("S700_BROWSER") {
+        return Some(PathBuf::from(explicit));
+    }
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        for name in BROWSER_NAMES {
+            let candidate = dir.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(windows)]
+fn find_browser() -> Option<PathBuf> {
+    if let Some(explicit) = std::env::var_os("S700_BROWSER") {
+        return Some(PathBuf::from(explicit));
+    }
+    let mut candidates = Vec::new();
+    for var in ["ProgramFiles(x86)", "ProgramFiles", "LOCALAPPDATA"] {
+        if let Some(base) = std::env::var_os(var) {
+            let base = PathBuf::from(base);
+            candidates.push(base.join("Microsoft\\Edge\\Application\\msedge.exe"));
+            candidates.push(base.join("Google\\Chrome\\Application\\chrome.exe"));
+            candidates.push(base.join("BraveSoftware\\Brave-Browser\\Application\\brave.exe"));
+            candidates.push(base.join("Vivaldi\\Application\\vivaldi.exe"));
+        }
+    }
+    candidates.into_iter().find(|p| p.is_file())
+}
+
+/// Abre el configurador en una ventana de aplicación (sin pestañas ni barra de
+/// direcciones). Si no hay ningún Chromium a mano, usa el navegador por defecto.
+fn launch_app(url: &str) {
+    let bin = match find_browser() {
+        Some(bin) => bin,
+        None => {
+            println!("  app window: no Edge/Chrome/Chromium found — opening the default browser");
+            open_browser(url);
+            return;
+        }
+    };
+    let mut cmd = std::process::Command::new(&bin);
+    cmd.arg(format!("--app={url}"))
+        .arg("--window-size=1180,880")
+        .arg("--no-first-run")
+        .arg("--no-default-browser-check")
+        .arg("--disable-features=msEdgeFirstRunExperience");
+    if let Some(dir) = profile_dir() {
+        let _ = std::fs::create_dir_all(&dir);
+        cmd.arg(format!("--user-data-dir={}", dir.display()));
+    }
+    match cmd.spawn() {
+        Ok(mut child) => {
+            println!("  app window: {} (closing it stops this host)", bin.display());
+            std::thread::spawn(move || {
+                let _ = child.wait();
+                std::process::exit(0);
+            });
+        }
+        Err(e) => {
+            eprintln!("  app window: cannot run {}: {e}", bin.display());
+            open_browser(url);
+        }
+    }
 }
 
 fn handle(host: &Host, mut conn: TcpStream) -> std::io::Result<()> {

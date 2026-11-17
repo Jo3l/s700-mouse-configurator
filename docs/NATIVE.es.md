@@ -8,22 +8,29 @@ del proyecto:
 2. Solo funciona en navegadores con WebHID (Chrome, Edge, Brave…), y desde
    `file://` ni eso.
 
-`native/` es un binario pequeño (sin dependencias, sin instalador) que hace lo
-mismo pero sin navegador de por medio: sirve la UI desde dentro de sí mismo en
-`127.0.0.1`, abre el navegador que ya tengas y habla el HID él mismo.
+`native/` es un binario pequeño (una ventana, sin instalador) que hace lo mismo
+pero sin navegador de por medio: sirve la UI desde dentro de sí mismo en
+`127.0.0.1`, la enseña en su propia ventana con el WebView del sistema — WebView2
+en Windows, WebKitGTK en Linux — y habla el HID él mismo.
 
 ```
-make native        # native/target/release/s700-host (~820 KB)
-make native-run    # lo arranca y abre la pestaña
+make native        # native/target/release/s700-host (~1.3 MB)
+make native-run    # lo compila y abre la ventana
+
+# En Linux, para compilar hacen falta las cabeceras de WebKitGTK una vez
+# (para ejecutar, la librería .so):
+sudo apt install pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev
 ```
 
 ```
-s700-host [--port N] [--no-open] [--list]
+s700-host [--port N] [--no-open] [--browser] [--list]
 
   --port N    puerto local (por defecto 8760). Fíjalo: el navegador guarda los
               cambios por origen, así que cambiar de puerto es cambiar de
               almacenamiento.
-  --no-open   no abrir el navegador
+  --no-open   no abrir nada
+  --browser   abrir la UI como pestaña normal en el navegador por defecto, en
+              vez de la ventana de aplicación
   --list      enumerar las interfaces del ratón y salir
 ```
 
@@ -33,7 +40,7 @@ s700-host [--port N] [--no-open] [--list]
 |---|---|---|---|
 | `make serve` + Chrome | diálogo WebHID + regla udev en Linux | un navegador con WebHID | 0 |
 | `dist/S700-configurador.html` | igual (se abre como `file://`) | ídem | ~520 KB |
-| `make native` | **nada en Windows**; udev en Linux | nada instalado | ~820 KB |
+| `make native` | **nada en Windows**; udev en Linux | Windows: nada (WebView2 viene con Edge). Linux: `libwebkit2gtk-4.1-0` + `libgtk-3-0` | ~1.3 MB |
 
 Las tres sirven la misma UI: `web/` no se duplica ni se adapta.
 
@@ -142,17 +149,22 @@ Sin probar todavía:
 - **la escritura real** en el ratón desde el binario: este usuario no tiene
   permiso sobre `/dev/hidraw1` (0600 root) y no hay root en la máquina. Es el
   único tramo que queda: instalar la regla y pulsar Apply.
-- **Windows**: ni compilado.
+- **Windows**: compila en el CI (MSVC, WebView2) pero nunca se ha ejecutado: ni la
+ventana ni la escritura HID están verificadas ahí.
 
-## ¿Y un webview propio (Tauri, Electron, Wails)?
+## Por qué un webview del sistema y no Electron
 
-- **Tauri/Wails**: el webview del sistema es WebView2 (Chromium) o WebKitGTK, y
-  ninguno implementa WebHID: la UI actual no funcionaría dentro tal cual. Habría
-  que hacer exactamente el mismo puente nativo que ya está en `native/`, así que
-  el webview solo añadiría peso y dependencias (webkit2gtk, libsoup…).
-- **Electron**: sí trae WebHID y se le puede quitar el diálogo
-  (`select-hid-device`), pero son ~90–100 MB por plataforma y en Linux sigue
-  necesitando la regla udev.
+La ventana es `wry` sobre `tao`: WebView2 (Chromium) en Windows, WebKitGTK en
+Linux. Ninguno de los dos implementa WebHID, y por eso existe el puente HTTP: la
+página habla con este proceso por `fetch`, así que al motor solo le toca pintar
+HTML. De ahí que la ventana salga barata:
 
-Para esta UI, que es HTML plano sin frameworks, el host de 820 KB es lo más
-barato: el "navegador" es el que el usuario ya tiene.
+- nada de Electron: ~90–100 MB por plataforma, y en Linux seguiría necesitando la
+  regla udev;
+- tampoco Tauri: los mismos motores más un marco de configuración y plugins que
+  este proyecto no usa, y ya es un solo binario con `web/` dentro;
+- lo que cuesta la decisión: el binario de Linux enlaza `libwebkit2gtk-4.1` y
+  `libgtk-3` en tiempo de ejecución (Windows no necesita nada: WebView2 viene con
+  Edge). Si el WebView no se puede crear, el host cae a una ventana de aplicación
+  de Edge/Chrome, `--browser` abre una pestaña normal y `--no-open` sigue sirviendo
+  sin ventana.

@@ -2,7 +2,7 @@
 
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20browser-informational)
-![native host](https://img.shields.io/badge/native%20host-~820%20KB-success)
+![native host](https://img.shields.io/badge/native%20host-~1.3%20MB-success)
 ![no dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)
 [![latest release](https://img.shields.io/github/v/release/Jo3l/s700-mouse-configurator)](https://github.com/Jo3l/s700-mouse-configurator/releases/latest)
 [![downloads](https://img.shields.io/github/downloads/Jo3l/s700-mouse-configurator/total)](https://github.com/Jo3l/s700-mouse-configurator/releases)
@@ -14,7 +14,7 @@
 | I want to… | How |
 |---|---|
 | **use it without downloading anything** | **<https://jo3l.github.io/s700-mouse-configurator/>** — the tool served as a web page (WebHID); open it and press *Connect mouse* |
-| **Windows** | [`s700-host-windows-x86_64.exe`](https://github.com/Jo3l/s700-mouse-configurator/releases/latest) — double click and that is it: it opens your browser with the UI already loaded and talks to the mouse itself; no permissions, no installer |
+| **Windows** | [`s700-host-windows-x86_64.exe`](https://github.com/Jo3l/s700-mouse-configurator/releases/latest) — double click and that is it: it opens its **own window** (no tabs, no address bar) with the UI loaded and talks to the mouse itself; no permissions, no installer |
 | **Linux** | [`s700-host-linux-x86_64`](https://github.com/Jo3l/s700-mouse-configurator/releases/latest) — run it; if it cannot open the mouse it offers to install the udev rule and asks for your password once |
 | **a single HTML file** | `S700-configurator.html` from the release: double click it in Chrome/Edge/Brave, no server needed |
 
@@ -61,11 +61,13 @@ The interface is **identical** in all three; no code is duplicated.
 |---|---|---|---|
 | **Web page** (`make serve` + Chrome) | WebHID permission per origin + udev rule on Linux | a Chromium browser | 0 |
 | **Single HTML file** (`make build`) | same (it opens as `file://`) | a Chromium browser | ~520 KB |
-| **Native host** (`make native`) | **nothing on Windows**; udev rule on Linux | nothing installed | ~820 KB |
+| **Native host** (`make native`) | **nothing on Windows**; udev rule on Linux | Windows: nothing (WebView2 ships with Edge). Linux: `libwebkit2gtk-4.1-0`, `libgtk-3-0` | ~1.3 MB |
 
 The native host (`native/`) is a dependency-free Rust binary that embeds the UI,
 serves it on `127.0.0.1` and talks to the HID device itself: no WebHID, no browser
-permission dialog, no installer. Windows is where it pays off most — there is
+permission dialog, no installer. It opens that UI in an app window of the Edge/Chrome
+you already have — no tabs, no address bar — and closing the window stops the host
+(`--browser` opens it as a normal tab instead). Windows is where it pays off most — there is
 nothing to grant.
 
 ## Quick start
@@ -73,7 +75,7 @@ nothing to grant.
 ### Windows
 
 ```powershell
-s700-host.exe            # double click: opens your browser with the UI loaded
+s700-host.exe            # double click: opens its own window with the UI loaded
 ```
 
 or grab `dist/S700-configurador.html`, double-click it in Chrome/Edge/Brave and press

@@ -3,6 +3,10 @@ name: release
 # Etiqueta -> binarios + configurador de un solo fichero, adjuntos a la release.
 # El .exe y el binario de Linux salen de aquí, así que no hace falta que nadie
 # los compile: se descargan de la página de releases.
+#
+# Desde que la ventana es un WebView del sistema (wry): Linux enlaza WebKitGTK
+# 4.1 y Windows enlaza WebView2, que sólo existe para MSVC — de ahí que el .exe
+# se compile en un runner Windows y no con mingw.
 on:
   push:
     tags: ["v*"]
@@ -12,28 +16,54 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  linux:
+    # Ubuntu 22.04 (glibc 2.35) + libwebkit2gtk-4.1-dev: el binario resultante
+    # pide libwebkit2gtk-4.1-0 y libgtk-3-0 en la máquina donde se ejecute.
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
-      - name: Linux x86_64 - glibc 2.31, Debian 11+ / Ubuntu 20.04+
+      - name: Linux x86_64 - WebKitGTK 4.1, glibc 2.35
         run: |
-          # se compila dentro de bullseye para que el binario no exija una glibc
-          # más nueva que la del runner
-          docker run --rm -v "$PWD:/w" -w /w/native rust:1-slim-bullseye \
-            cargo build --release --offline
+          docker run --rm -v "$PWD:/w" -w /w/native ubuntu:22.04 bash -c '
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq
+            apt-get install -y -qq curl ca-certificates build-essential pkg-config \
+              libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libx11-dev >/dev/null
+            curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal >/dev/null
+            . "$HOME/.cargo/env"
+            cargo build --release'
           sudo chown -R "$(id -u):$(id -g)" native/target
           install -m 755 native/target/release/s700-host s700-host-linux-x86_64
 
-      - name: Windows x86_64 - PE32+, mingw
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc-mingw-w64-x86-64
-          rustup target add x86_64-pc-windows-gnu
-          cargo build --release --offline \
-            --manifest-path native/Cargo.toml --target x86_64-pc-windows-gnu
-          cp native/target/x86_64-pc-windows-gnu/release/s700-host.exe s700-host-windows-x86_64.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: s700-host-linux-x86_64
+
+  windows:
+    # WebView2 no enlaza con mingw. El runtime sí viene de serie en Windows 10/11
+    # (es Edge), así que el usuario no instala nada.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Windows x86_64 - WebView2 (MSVC)
+        run: cargo build --release --manifest-path native/Cargo.toml
+
+      - name: Renombrar
+        shell: bash {0}
+        run: cp native/target/release/s700-host.exe s700-host-windows-x86_64.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: s700-host-windows-x86_64.exe
+
+  extras:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Configurador de un solo fichero
         run: |
@@ -43,42 +73,32 @@ jobs:
       - name: Pruebas
         run: make test
 
-      - name: Artefactos (siempre, también sin etiqueta)
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: s700-host
+          name: extras
           path: |
-            s700-host-linux-x86_64
-            s700-host-windows-x86_64.exe
             S700-configurator.html
             native/99-s700-hid.rules
 
-      - name: Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+  release:
+    needs: [linux, windows, extras]
+    runs-on: ubuntu-22.04
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Juntar los ficheros
+        run: |
+          find artifacts -type f -exec cp {} . \;
+          ls -la S700-configurator.html 99-s700-hid.rules s700-host-linux-x86_64 s700-host-windows-x86_64.exe
+
+      - uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
-          generate_release_notes: true
-          body: |
-            Configurator for the HXSJ S700 «G6» gaming mouse — download, run, done. Nothing to install.
-
-            * `s700-host-windows-x86_64.exe` — Windows 10/11: double click and that is it. It opens
-              your browser with the interface already loaded and talks to the mouse itself; there
-              are no permissions to grant and no address to type (`--no-open` if you would rather
-              open it yourself; it listens on <http://127.0.0.1:8760/>).
-            * `s700-host-linux-x86_64` — Linux x86_64: run it, same interface. If it cannot open
-              the mouse (the kernel node is root-only) the *Debug* tab offers **Install udev rule**,
-              or run `./s700-host-linux-x86_64 --install-rule`: your desktop asks for the password
-              once and everything afterwards runs as your normal user. No `cp`, no root server.
-            * `S700-configurator.html` — one file, if you would rather not run anything: open it in
-              Chrome/Edge/Brave and press *Connect mouse* (WebHID).
-            * `99-s700-hid.rules` — the `/dev/hidraw*` permission rule for Linux.
-
-            Or use the served version: <https://jo3l.github.io/s700-mouse-configurator/>
-
-            Back up from the *Backup* tab before writing anything to the mouse.
           files: |
             s700-host-linux-x86_64
             s700-host-windows-x86_64.exe
             S700-configurator.html
-            native/99-s700-hid.rules
+            99-s700-hid.rules
