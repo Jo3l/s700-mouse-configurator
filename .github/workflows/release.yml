@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Linux x86_64 (glibc 2.31: Debian 11+, Ubuntu 20.04+)
+      - name: Linux x86_64 - glibc 2.31, Debian 11+ / Ubuntu 20.04+
         run: |
           # se compila dentro de bullseye para que el binario no exija una glibc
           # más nueva que la del runner
@@ -26,7 +26,7 @@ jobs:
           sudo chown -R "$(id -u):$(id -g)" native/target
           install -m 755 native/target/release/s700-host s700-host-linux-x86_64
 
-      - name: Windows x86_64 (PE32+, mingw)
+      - name: Windows x86_64 - PE32+, mingw
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq gcc-mingw-w64-x86-64
