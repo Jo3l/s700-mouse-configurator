@@ -1,184 +1,184 @@
-# Protocolo del S700 (HXSJ) — notas de ingeniería inversa
+# S700 (HXSJ) protocol — reverse-engineering notes
 
-Todo lo que hay aquí está **verificado** ejecutando el programa del fabricante
-(`original/S700 Gaming Mouse.exe`) contra un ratón simulado, salvo lo que se marca
-explícitamente como *inferido* o *sin confirmar*.
+Everything here is **verified** by running the vendor program
+(`original/S700 Gaming Mouse.exe`) against a simulated mouse, except what is
+explicitly marked as *inferred* or *unconfirmed*.
 
-El método está en [`tools/`](../tools): el EXE corre bajo Wine y una DLL propia
-(`tools/hid_shim.c`) suplanta `HidD_*` y `SetupDi*` para capturar cada informe HID.
-Con `tools/probe/probe.sh` se lanza el programa, se pulsa OK y se vuelca el tráfico
-a un log; `tools/probe/sweep.py` cambia un campo del `config.ini` cada vez y anota
-qué bytes del ratón cambian.
+The method is in [`tools/`](../tools): the EXE runs under Wine and an in-house DLL
+(`tools/hid_shim.c`) impersonates `HidD_*` and `SetupDi*` to capture every HID report.
+`tools/probe/probe.sh` launches the program, presses OK and dumps the traffic
+to a log; `tools/probe/sweep.py` changes one field of `config.ini` at a time and records
+which bytes of the mouse change.
 
 ---
 
-## 1. Interfaz HID
+## 1. HID interface
 
-El programa no usa ficheros para el ratón: abre la **colección vendor** y habla por
-informes *feature*.
+The program uses no files for the mouse: it opens the **vendor collection** and talks over
+*feature* reports.
 
-Descriptor real del ratón (leído con WebHID el 16/11/2026, VID:PID `30fa:1540`,
-producto «USB GAMING MOUSE»):
+Actual mouse descriptor (read with WebHID on 16/11/2026, VID:PID `30fa:1540`,
+product «USB GAMING MOUSE»):
 
-| Colección | Informes |
+| Collection | Reports |
 |---|---|
-| `UsagePage 0xFF00`, `Usage 0x01` | **input** 6 (datos del ratón), sin feature |
-| `UsagePage 0xFF01`, `Usage 0x01` | **feature 7: 56 bits = 7 bytes** (configuración) |
-| `UsagePage 0x0C` (consumidor), `Usage 0x01` | input 2 (multimedia) |
+| `UsagePage 0xFF00`, `Usage 0x01` | **input** 6 (mouse data), no feature |
+| `UsagePage 0xFF01`, `Usage 0x01` | **feature 7: 56 bits = 7 bytes** (configuration) |
+| `UsagePage 0x0C` (consumer), `Usage 0x01` | input 2 (multimedia) |
 
-| Dato | Valor |
+| Item | Value |
 |---|---|
-| Colección de configuración | `UsagePage 0xFF01`, `Usage 0x01` |
-| Informe | *feature* **report ID 7, 7 bytes de datos** (8 con el ID) |
-| VID/PID que acepta el programa | `0x30FA` con `0x1540` o `0x1E01` (compara `HIDD_ATTRIBUTES` y una lista de nombres de producto) |
-| API usada | `HidD_SetFeature` / `HidD_GetFeature` en un handle `CreateFile(..., GENERIC_READ|GENERIC_WRITE)` |
+| Configuration collection | `UsagePage 0xFF01`, `Usage 0x01` |
+| Report | *feature* **report ID 7, 7 bytes of data** (8 with the ID) |
+| VID/PID accepted by the program | `0x30FA` with `0x1540` or `0x1E01` (it compares `HIDD_ATTRIBUTES` and a list of product names) |
+| API used | `HidD_SetFeature` / `HidD_GetFeature` on a `CreateFile(..., GENERIC_READ|GENERIC_WRITE)` handle |
 
-> **Ojo con el tamaño.** El programa del fabricante pasa un búfer de 65 bytes y la
-> pila HID lo recorta a 8 sin rechistar; WebHID (y `hidapi` en Windows) exigen el
-> tamaño exacto que declara el descriptor, así que enviar 64 bytes de datos da
-> `Failed to write the feature report`. La trama real son **7 bytes de datos**.
+> **Watch the size.** The vendor program passes a 65-byte buffer and the HID stack
+> trims it to 8 without complaint; WebHID (and `hidapi` on Windows) require the exact
+> size the descriptor declares, so sending 64 bytes of data gives
+> `Failed to write the feature report`. The real frame is **7 bytes of data**.
 
-No usa `WriteFile`/`ReadFile`: sólo informes feature, lo que **hace viable WebHID**
-en el navegador (`sendFeatureReport` / `receiveFeatureReport`).
+It does not use `WriteFile`/`ReadFile`: feature reports only, which **makes WebHID viable**
+in the browser (`sendFeatureReport` / `receiveFeatureReport`).
 
-## 2. Trama
+## 2. Frame
 
 ```
-byte 0   0x07            report ID (no viaja en el búfer de sendFeatureReport)
-byte 1   0x18            constante en toda trama observada
-byte 2   cmd             comando (ver tabla)
-byte 3   índice          posición dentro de la ráfaga (0..n-1)
-byte 4   addr_lo         dirección, byte bajo
-byte 5   addr_hi         dirección, byte alto
-byte 6   dato            byte de datos
-byte 7   longitud-1      n-1 (0 cuando n = 1; 0 cuando no aplica)
+byte 0   0x07            report ID (does not travel in the sendFeatureReport buffer)
+byte 1   0x18            constant in every observed frame
+byte 2   cmd             command (see table)
+byte 3   index           position within the burst (0..n-1)
+byte 4   addr_lo         address, low byte
+byte 5   addr_hi         address, high byte
+byte 6   data            data byte
+byte 7   length-1        n-1 (0 when n = 1; 0 when not applicable)
 ```
 
-| cmd | significado |
+| cmd | meaning |
 |---|---|
-| `0x03` | escribir un byte (se acumula en el búfer del ratón) |
-| `0x05` | leer un byte (la respuesta llega en el byte 6) |
-| `0x09` | confirmar el bloque: escribe lo acumulado en `addr` |
-| `0x00` | fin de transacción / no-op |
-| `0x10` | fin de sesión (al cerrar) |
+| `0x03` | write one byte (it accumulates in the mouse buffer) |
+| `0x05` | read one byte (the reply arrives in byte 6) |
+| `0x09` | commit the block: writes what has accumulated at `addr` |
+| `0x00` | end of transaction / no-op |
+| `0x10` | end of session (on close) |
 
-## 3. Escritura
+## 3. Write
 
-Para cada bloque de 8 bytes (es lo que usa el fabricante; también usa bloques de 1 y 2):
-
-```
--> 07 18 03 00 08 00 21 07   escribir 0x21 en 0x0008 (índice 0, longitud 8)
--> 07 18 03 01 08 00 22 07   índice 1 ...
-   ... 8 tramas ...
--> 07 18 09 00 08 00 00 07   commit del bloque en 0x0008
--> 07 18 00 00 08 00 00 00   fin
-```
-
-Entre trama y trama el programa espera ~2 ms. El commit copia el búfer al
-almacenamiento del ratón; la trama `cmd 0x09` lleva la **dirección inicial** y
-`longitud-1`.
-
-## 4. Lectura
+For each 8-byte block (that is what the vendor uses; it also uses 1- and 2-byte blocks):
 
 ```
--> 07 18 05 00 76 00 00 00   leer 1 byte en 0x0076
-<- 07 18 05 00 76 00 XX 00   la respuesta repite cabecera y trae el dato en el byte 6
+-> 07 18 03 00 08 00 21 07   write 0x21 at 0x0008 (index 0, length 8)
+-> 07 18 03 01 08 00 22 07   index 1 ...
+   ... 8 frames ...
+-> 07 18 09 00 08 00 00 07   commit of the block at 0x0008
+-> 07 18 00 00 08 00 00 00   end
 ```
 
-El programa del fabricante sólo lee **un byte** (dirección `0x0076`, al final de la
-subida).
+Between frame and frame the program waits ~2 ms. The commit copies the buffer to the
+mouse storage; the `cmd 0x09` frame carries the **start address** and
+`length-1`.
 
-> **Probado en hardware (17/11/2026): la lectura no devuelve el protocolo.**
-> `GetFeature(7)` en un `30FA:1540` («USB GAMING MOUSE», informe de 7 bytes) desde
-> Chrome/Windows devuelve 8 bytes que empiezan por el *report id* y siguen con
-> datos que cambian con el movimiento (`07 01 5e 09 03 00 27 90`), nunca `18 05 …`,
-> con cualquier espera y con las variantes de 1 byte, ráfaga y comandos vecinos
-> probadas. El `/dev/hidraw1` que aparece en la máquina de desarrollo **no es una
-> segunda unidad**: es el ratón virtual que crea `tools/hid_shim.c` en el
-> contenedor (`/sys/devices/virtual/misc/uhid`), y contesta con el `g_reply` del
-> shim, no con firmware.
+## 4. Read
+
+```
+-> 07 18 05 00 76 00 00 00   read 1 byte at 0x0076
+<- 07 18 05 00 76 00 XX 00   the reply repeats the header and brings the data in byte 6
+```
+
+The vendor program only reads **one byte** (address `0x0076`, at the end of the
+upload).
+
+> **Tested on hardware (17/11/2026): reading does not return the protocol.**
+> `GetFeature(7)` on a `30FA:1540` («USB GAMING MOUSE», 7-byte report) from
+> Chrome/Windows returns 8 bytes that start with the *report id* and continue with
+> data that changes with movement (`07 01 5e 09 03 00 27 90`), never `18 05 …`,
+> with any wait and with the 1-byte, burst and neighbouring-command variants
+> tried. The `/dev/hidraw1` that shows up on the development machine **is not a
+> second unit**: it is the virtual mouse that `tools/hid_shim.c` creates in the
+> container (`/sys/devices/virtual/misc/uhid`), and it answers with the shim's
+> `g_reply`, not with firmware.
 >
-> Matriz de lo probado en el `30FA:1540` (Chrome/Windows, 17/11/2026):
+> Matrix of what was tried on the `30FA:1540` (Chrome/Windows, 17/11/2026):
 >
-> | Prueba | Resultado |
+> | Test | Result |
 > |---|---|
-> | `GetFeature(7)` en reposo, y tras leer `0x0001`, `0x0008`, `0x0076` | siempre el mismo bloque ajeno al protocolo (`07 xx 5e 09 03 00 27 90`) |
-> | esperas de 2, 30, 150 y 300 ms | igual |
-> | lecturas por ráfaga (índice 0..7, `len-1 = 7`) | igual |
-> | comandos `0x00–0x0F`, `0x10–0x12` (sin `0x09`, que escribe) | igual, cambia sólo el primer byte del bloque |
-> | informe de entrada 2 y 6 (`inputreport`) en reposo y tras cada petición | **ninguno** (no se recibe nada) |
-> | `GetFeature` de otros report ids (0–6, 8, 15) | `NotAllowedError`: sólo existe el 7 |
+> | `GetFeature(7)` at rest, and after reading `0x0001`, `0x0008`, `0x0076` | always the same block unrelated to the protocol (`07 xx 5e 09 03 00 27 90`) |
+> | waits of 2, 30, 150 and 300 ms | same |
+> | burst reads (index 0..7, `len-1 = 7`) | same |
+> | commands `0x00–0x0F`, `0x10–0x12` (without `0x09`, which writes) | same, only the first byte of the block changes |
+> | input report 2 and 6 (`inputreport`) at rest and after each request | **none** (nothing is received) |
+> | `GetFeature` of other report ids (0–6, 8, 15) | `NotAllowedError`: only 7 exists |
 >
-> Conclusión: no hay canal de lectura. El firmware implementa la escritura y nada
-> más, así que el configurador no lee (ni lo intenta).
+> Conclusion: there is no read channel. The firmware implements writing and nothing
+> else, so the configurator does not read (nor does it try).
 >
-> Mientras eso no diga otra cosa, el firmware implementa `SetFeature` pero no
-> contesta a `GetFeature`, así que el
-> configurador **no puede leer lo que el ratón tiene guardado**. Trabaja sobre la
-> imagen que el propio fabricante escribe para su `config.ini` de fábrica
-> (`web/default_image.js`, generada de `tools/probe/baseline.log` con
-> `tools/make_default_image.py`) y la escribe igual que él. La lectura queda como
-> sonda: si algún día una unidad contesta, `state.canRead` pasa a `true` y se
-> vuelve a verificar lo escrito releyéndolo.
+> Until that says otherwise, the firmware implements `SetFeature` but does not
+> answer `GetFeature`, so the
+> configurator **cannot read what the mouse has stored**. It works on the
+> image that the vendor itself writes for its factory `config.ini`
+> (`web/default_image.js`, generated from `tools/probe/baseline.log` with
+> `tools/make_default_image.py`) and writes it the same way it does. Reading remains as a
+> probe: if one day a unit answers, `state.canRead` becomes `true` and what was written
+> is verified again by re-reading it.
 >
-> Ojo al detalle de Windows: `receiveFeatureReport` devuelve el *report id* como
-> primer byte, así que hay que quitarlo antes de interpretar la trama (si no,
-> todo sale desfasado un byte).
+> Note the Windows detail: `receiveFeatureReport` returns the *report id* as the
+> first byte, so it has to be removed before interpreting the frame (otherwise
+> everything comes out shifted by one byte).
 
-### Escritura: la imagen completa o nada (confirmado en hardware, 17/11/2026)
+### Write: the full image or nothing (confirmed on hardware, 17/11/2026)
 
-Escribir sólo los bloques que cambian **no surte efecto**: el ratón acepta los
-commits (no hay error) y sigue ejecutando la configuración anterior. Con la imagen
-completa — los 108 bloques de `WRITE_BLOCKS`, en el mismo orden que usa el
-fabricante, con la tabla de punteros de `0x006E` incluida — el cambio sí se aplica.
-El configurador manda siempre la imagen entera por eso.
+Writing only the blocks that change **has no effect**: the mouse accepts the
+commits (there is no error) and keeps running the previous configuration. With the full
+image — the 108 blocks of `WRITE_BLOCKS`, in the same order the
+vendor uses, with the pointer table at `0x006E` included — the change does apply.
+That is why the configurator always sends the whole image.
 
-## 5. Mapa de memoria
+## 5. Memory map
 
-| Rango | Contenido |
+| Range | Content |
 |---|---|
-| `0x0001` | perfil activo: `0x03 \| (perfil << 5)` → 0x03, 0x23, 0x43, 0x63 |
-| `0x0008–0x000F` | botones del **perfil 0** (8 ranuras) |
-| `0x0010–0x0017` | DPI (nibbles en `0x15..0x17`), `0x14` = nivel DPI |
-| `0x0018–0x001F` | `0x1A` tiempo de ráfaga, `0x1C` tipo de LED, `0x1E` tasa de sondeo USB |
-| `0x0020–0x003F` | colores de LED por etapa/nivel, `0x3F` brillo (nibble alto) |
-| `0x003B–0x003C` | botones 7 y 8 del **perfil 0** |
-| `0x0044–0x004E` | botones del **perfil 1** |
-| `0x0050–0x005A` | botones del **perfil 2** |
-| `0x0060–0x006A` | botones del **perfil 3** |
-| `0x006E–0x007F` | tabla de punteros a registros + suma de comprobación (cambia con las acciones) |
-| `0x00A0–0x02CF` | registros de acciones avanzadas / macros (no descifrado) |
-| `0x0400–0x04A7` | más registros y bloque de flags |
-| `0x0080–0x009F` | **no** se escribe con la configuración por defecto (¿perfiles sin usar?) |
+| `0x0001` | active profile: `0x03 \| (profile << 5)` → 0x03, 0x23, 0x43, 0x63 |
+| `0x0008–0x000F` | buttons of **profile 0** (8 slots) |
+| `0x0010–0x0017` | DPI (nibbles at `0x15..0x17`), `0x14` = DPI level |
+| `0x0018–0x001F` | `0x1A` burst time, `0x1C` LED type, `0x1E` USB polling rate |
+| `0x0020–0x003F` | LED colours per stage/level, `0x3F` brightness (high nibble) |
+| `0x003B–0x003C` | buttons 7 and 8 of **profile 0** |
+| `0x0044–0x004E` | buttons of **profile 1** |
+| `0x0050–0x005A` | buttons of **profile 2** |
+| `0x0060–0x006A` | buttons of **profile 3** |
+| `0x006E–0x007F` | table of pointers to registers + checksum (changes with the actions) |
+| `0x00A0–0x02CF` | advanced action / macro registers (not deciphered) |
+| `0x0400–0x04A7` | more registers and a flags block |
+| `0x0080–0x009F` | **not** written with the default configuration (unused profiles?) |
 
-El programa **escribe siempre** `0x0001`, `0x006E` (2 bytes) y los 15 bloques de
-`0x0008` a `0x007F`, más `0x00A0–0x02CF` y `0x0400–0x04A7`. Nunca escribe
-`0x0080–0x009F` en el perfil 1.
+The program **always writes** `0x0001`, `0x006E` (2 bytes) and the 15 blocks from
+`0x0008` to `0x007F`, plus `0x00A0–0x02CF` and `0x0400–0x04A7`. It never writes
+`0x0080–0x009F` in profile 1.
 
-### Botones (perfil 0 = el activo)
+### Buttons (profile 0 = the active one)
 
-| Ranura | Dirección | `config.ini` |
+| Slot | Address | `config.ini` |
 |---|---|---|
-| izquierdo | `0x08` | K0 |
-| derecho | `0x0A` | K1 |
-| central | `0x09` | K2 |
-| adelante | `0x0C` | K3 |
-| atrás | `0x0B` | K4 |
-| botón 6 | `0x0D` | K5 |
-| botón 7 | `0x3B` | K6 |
-| botón 8 | `0x3C` | K7 |
-| botón 9 | `0x0F` | K8 |
-| botón 10 | `0x0E` | K9 |
-| — | — | K10 no se escribe (no existe en este modelo) |
+| left | `0x08` | K0 |
+| right | `0x0A` | K1 |
+| middle | `0x09` | K2 |
+| forward | `0x0C` | K3 |
+| back | `0x0B` | K4 |
+| button 6 | `0x0D` | K5 |
+| button 7 | `0x3B` | K6 |
+| button 8 | `0x3C` | K7 |
+| button 9 | `0x0F` | K8 |
+| button 10 | `0x0E` | K9 |
+| — | — | K10 is not written (it does not exist on this model) |
 
-Perfiles 1–3 usan el mismo orden pero desplazado: `0x44`, `0x50`, `0x60` son la
-ranura K0 de cada uno, con K6/K7 en `0x4D/0x4E`, `0x59/0x5A`, `0x69/0x6A`. La ranura
-de K9 sólo aparece como byte simple en el perfil 3 (`0x66`); en los perfiles 1 y 2
-la acción K9 por defecto es una función avanzada y se guarda como registro.
+Profiles 1–3 use the same order but shifted: `0x44`, `0x50`, `0x60` are the
+K0 slot of each one, with K6/K7 at `0x4D/0x4E`, `0x59/0x5A`, `0x69/0x6A`. The K9
+slot only appears as a plain byte in profile 3 (`0x66`); in profiles 1 and 2
+the default K9 action is an advanced function and is stored as a register.
 
-### Tabla de acciones (id de `config.ini` → código en el ratón)
+### Action table (`config.ini` id → code on the mouse)
 
-| id | código | id | código | id | código |
+| id | code | id | code | id | code |
 |---|---|---|---|---|---|
 | 1 | `0x21` | 8 | `0x23` | 15 | `0x35` |
 | 2 | `0x22` | 9 | `0x24` | 16 | `0x2B` |
@@ -186,61 +186,61 @@ la acción K9 por defecto es una función avanzada y se guarda como registro.
 | 4 | `0x24` | 11 | `0x26` | 18 | `0x34` |
 | 5 | `0x25` | 12 | `0x27` | 19 | `0x37` |
 | 6 | `0x26` | 13 | `0x28` | 20 | `0x38` |
-| 7 | `0x22` | 14 | `0x29` | ≥21 | acción avanzada → registro |
+| 7 | `0x22` | 14 | `0x29` | ≥21 | advanced action → register |
 
-Los identificadores 1–6 son los botones estándar (izquierdo, central, derecho,
-atrás, adelante); 12 «mostrar escritorio», 14 «ráfaga», 15 «LED loop», 16/17 DPI
-+/−, 19 «cambiar LED». Los códigos 7–11 repiten los de 2–6: el ratón no distingue
-esas variantes del fabricante.
+Identifiers 1–6 are the standard buttons (left, middle, right,
+back, forward); 12 "show desktop", 14 "autofire", 15 "LED loop", 16/17 DPI
++/−, 19 "switch LED". Codes 7–11 repeat those of 2–6: the mouse does not distinguish
+those vendor variants.
 
 ### DPI
 
-Seis etapas en 3 bytes, **dos códigos de 4 bits por byte**, nibble alto = etapa par:
+Six stages in 3 bytes, **two 4-bit codes per byte**, high nibble = even stage:
 
 ```
-código(etapa) = (ajuste + 1) & 0xF        si ajuste <= 9
-                (ajuste + 2) & 0xF        si ajuste >= 10
+code(stage) = (setting + 1) & 0xF        if setting <= 9
+              (setting + 2) & 0xF        if setting >= 10
 ```
 
-Comprobado etapa a etapa: `5→6`, `7→8`, `8→9`, `10→12`, `12→14`, `15→1`, `16→2`,
-`22→8`. Con la configuración de fábrica (`DPI_SET0..5 = 5,7,10,15,16,22`) los bytes
-`0x15..0x17` salen `68 C1 28`.
+Checked stage by stage: `5→6`, `7→8`, `8→9`, `10→12`, `12→14`, `15→1`, `16→2`,
+`22→8`. With the factory configuration (`DPI_SET0..5 = 5,7,10,15,16,22`) the bytes
+`0x15..0x17` come out `68 C1 28`.
 
-> **Aviso:** el contador se queda en 4 bits, así que ajustes distintos colapsan en el
-> mismo código (7 y 22 dan `8`). El valor en dpi que enseña la herramienta del
-> fabricante (1200, 1600, 2400, 6400, 7200, 12800 para esos ajustes) sale de su
-> tabla, no del byte. La correspondencia **código → dpi real del sensor no está
-> confirmada** y hay que medirla en el ratón.
+> **Warning:** the counter stays at 4 bits, so different settings collapse into the
+> same code (7 and 22 both give `8`). The dpi value the vendor tool
+> shows (1200, 1600, 2400, 6400, 7200, 12800 for those settings) comes from its
+> table, not from the byte. The **code → real sensor dpi** correspondence is **not
+> confirmed** and has to be measured on the mouse.
 
-### Otros campos verificados
+### Other verified fields
 
-| Dirección | Campo | Comprobación |
+| Address | Field | Check |
 |---|---|---|
-| `0x1E` | tasa de sondeo USB (índice) | `2→3` cambia el byte |
-| `0x1C` | tipo de efecto LED | `9→10` cambia el byte |
-| `0x3F` (nibble alto) | brillo LED | `0→1` pasa `0x00` a `0x10` |
-| `0x1A` | tiempo de ráfaga | cambia con `FIRE_TIME`, se propaga a los registros |
+| `0x1E` | USB polling rate (index) | `2→3` changes the byte |
+| `0x1C` | LED effect type | `9→10` changes the byte |
+| `0x3F` (high nibble) | LED brightness | `0→1` turns `0x00` into `0x10` |
+| `0x1A` | burst time | changes with `FIRE_TIME`, propagates to the registers |
 
 
-## 5-bis. Acciones: no son sólo 20
+## 5-bis. Actions: they are not only 20
 
-La lista de funciones de la propia herramienta (`skins/INI_EN/skin_main_en.ini`,
-sección `[FUN_STRING]`) tiene **41 entradas**. Medido con el arnés, se codifican de
-tres maneras distintas:
+The function list of the tool itself (`skins/INI_EN/skin_main_en.ini`,
+section `[FUN_STRING]`) has **41 entries**. Measured with the harness, they are encoded in
+three different ways:
 
-| ids | codificación | dónde |
+| ids | encoding | where |
 |---|---|---|
-| 1–22 | **1 byte** en la dirección del botón | `0x21 … 0x3a` |
-| 23–32 (multimedia) | byte `0x2f` + **registro** con el *usage* HID de consumidor | registro |
-| 33–41 (atajos, macro, teclas) | byte `0x3e`/`0x3f` + **registro** con modificador + tecla | registro |
+| 1–22 | **1 byte** at the button's address | `0x21 … 0x3a` |
+| 23–32 (multimedia) | byte `0x2f` + **register** with the consumer HID *usage* | register |
+| 33–41 (shortcuts, macro, keys) | byte `0x3e`/`0x3f` + **register** with modifier + key | register |
 
-### Funciones con un solo byte (medidas una a una)
+### Functions with a single byte (measured one by one)
 
-| id | función | código | id | función | código |
+| id | function | code | id | function | code |
 |---|---|---|---|---|---|
 | 1 | Left Button | `0x21` | 12 | Show Desktop | `0x27` |
 | 2 | Mid Button | `0x22` | 13 | Double click | `0x28` |
-| 3 | Right Button | `0x23` | 14 | Autofire (ráfaga) | `0x29` |
+| 3 | Right Button | `0x23` | 14 | Autofire (burst) | `0x29` |
 | 4 | Backward | `0x24` | 15 | LED Loop | `0x35` |
 | 5 | Forward | `0x25` | 16 | DPI + | `0x2b` |
 | 6 | DPI Loop | `0x26` | 17 | DPI − | `0x2c` |
@@ -248,18 +248,18 @@ tres maneras distintas:
 | 20 | Game I | `0x38` | 21 | Game II | `0x39` |
 | 22 | Game III | `0x3a` | | | |
 
-Los ids 7–11 (`Extend`, `Media`, `Macro`, `ShortCut`, `Mode`) son **categorías del
-menú**, no funciones: al elegirlas la herramienta guarda la sub-función concreta.
+Ids 7–11 (`Extend`, `Media`, `Macro`, `ShortCut`, `Mode`) are **menu
+categories**, not functions: when you pick them the tool stores the specific sub-function.
 
-### Teclas multimedia (byte `0x2f` + usage HID de consumidor)
+### Multimedia keys (byte `0x2f` + consumer HID usage)
 
-Registro de 9 bytes a partir de `0x186`:
+9-byte register starting at `0x186`:
 
 ```
 01 00 ff <usage_lo> <usage_hi> 90 04 00 8a
 ```
 
-| id | función | usage | id | función | usage |
+| id | function | usage | id | function | usage |
 |---|---|---|---|---|---|
 | 23 | Browser | `0x0223` | 28 | Previous | `0x00b6` |
 | 24 | Player | `0x0183` | 29 | Next | `0x00b5` |
@@ -267,14 +267,14 @@ Registro de 9 bytes a partir de `0x186`:
 | 26 | Vol + | `0x00e9` | 31 | Play/Pause | `0x00cd` |
 | 27 | Vol − | `0x00ea` | 32 | Calculator | `0x0192` |
 
-Son *consumer usages* estándar de la página `0x0C`, y el ratón **tiene** esa
-colección (`input 2`), así que estas funciones las ejecuta el firmware: deberían
-funcionar sin la aplicación del fabricante.
+They are standard *consumer usages* of page `0x0C`, and the mouse **has** that
+collection (`input 2`), so these functions are executed by the firmware: they should
+work without the vendor application.
 
-**Ranuras del perfil activo** (medidas botón a botón; siguen el orden físico, no el
-de la lista):
+**Slots of the active profile** (measured button by button; they follow the physical order, not
+the order of the list):
 
-| botón (índice) | dir. del byte | ranura del registro | botón (índice) | dir. | ranura |
+| button (index) | byte addr. | register slot | button (index) | addr. | slot |
 |---|---|---|---|---|---|
 | 0 | `0x08` | `0x0A0` | 5 | `0x0D` | `0x0D2` |
 | 1 | `0x0A` | `0x0B4` | 6 | `0x3B` | `0x0FA` |
@@ -282,29 +282,29 @@ de la lista):
 | 3 | `0x0C` | `0x0C8` | 8 | `0x0F` | `0x0E6` |
 | 4 | `0x0B` | `0x0BE` | 9 | `0x0E` | `0x0DC` |
 
-Volver a una función normal equivale a escribir el código de 1 byte y poner a cero
-los 9 bytes del registro. El configurador ya lo hace así.
+Going back to a normal function is equivalent to writing the 1-byte code and zeroing
+the 9 bytes of the register. The configurator already does it that way.
 
-> Sin resolver: al asignar multimedia a los botones 0 y 1 la herramienta escribe
-> además un **segundo registro** de 9 bytes (`01 00 ff 00 00 00 00 00 0a`) en
-> `0x02BC` y `0x02C6`; con los botones 2–9 no lo hace. No sabemos qué significa ni
-> si el ratón lo necesita, así que no lo replicamos. Si una tecla multimedia no
-> funciona en el hardware, ese es el primer candidato.
+> Unresolved: when assigning multimedia to buttons 0 and 1 the tool also writes
+> a **second register** of 9 bytes (`01 00 ff 00 00 00 00 00 0a`) at
+> `0x02BC` and `0x02C6`; with buttons 2–9 it does not. We do not know what it means or
+> whether the mouse needs it, so we do not replicate it. If a multimedia key does not
+> work on the hardware, that is the first candidate.
 
-### Atajos, teclas y macros (byte `0x3e`/`0x3f` + registro)
+### Shortcuts, keys and macros (byte `0x3e`/`0x3f` + register)
 
-Registro de 9 bytes, mismos campos pero con `0x187` como byte de modificador:
+9-byte register, same fields but with `0x187` as the modifier byte:
 
 ```
-01 04 ff <tecla_lo> <tecla_hi> 90 04 00 8a
+01 04 ff <key_lo> <key_hi> 90 04 00 8a
 ```
 
-Ejemplo medido: id 33 `Copy` → `01 04 ff b7 00 …`.
+Measured example: id 33 `Copy` → `01 04 ff b7 00 …`.
 
-Los ids 50, 51, 52, 53 y 259 que trae el `config.ini` de fábrica son acciones
-personalizadas de este grupo. Sus registros son:
+Ids 50, 51, 52, 53 and 259 that the factory `config.ini` carries are custom
+actions of this group. Their registers are:
 
-| id | registro |
+| id | register |
 |---|---|
 | 50 | `01 8c ff 00 00 20 04 00 82` |
 | 51 | `01 89 ff 00 00 00 04 00 84` |
@@ -312,105 +312,105 @@ personalizadas de este grupo. Sus registros son:
 | 53 | `01 82 ff 00 00 80 04 00 8a` |
 | 259 | `01 88 ff 00 00 90 04 00 0a` |
 
-Los valores `0x89`, `0x8c`, `0x82`, `0x88`, `0x8a`, `0x84` encajan sospechosamente
-con **máscaras de modificadores HID** (`0x01` Ctrl, `0x02` Shift, `0x04` Alt,
-`0x08` Win, `0x80` «hay modificador»), así que los campos de tecla y modificador
-están ahí aunque todavía no sepamos en qué orden. Eso implica que **asignar Shift
-(o Ctrl+C) a un botón es representable**; falta confirmar el reparto exacto de
-campos y quién ejecuta la tecla.
+The values `0x89`, `0x8c`, `0x82`, `0x88`, `0x8a`, `0x84` fit suspiciously well
+with **HID modifier masks** (`0x01` Ctrl, `0x02` Shift, `0x04` Alt,
+`0x08` Win, `0x80` "there is a modifier"), so the key and modifier fields
+are there even though we still do not know in what order. That implies that **assigning Shift
+(or Ctrl+C) to a button is representable**; confirming the exact split of
+fields and who executes the key is still pending.
 
-**Sin resolver:** de dónde salen exactamente la tecla y el modificador (la
-herramienta tiene un diálogo «Please enter the key»), cómo se reparten los
-registros cuando varios botones usan funciones avanzadas (la tabla de punteros de
-`0x006E` cambia de base: `0x0490`, `0x04a8`, `0x0460`…) y si el ratón ejecuta esas
-teclas él mismo.
+**Unresolved:** where exactly the key and the modifier come from (the
+tool has a "Please enter the key" dialogue), how the
+registers are distributed when several buttons use advanced functions (the pointer table at
+`0x006E` changes base: `0x0490`, `0x04a8`, `0x0460`…) and whether the mouse executes those
+keys itself.
 
-> Dato importante: el descriptor del ratón **no tiene colección de teclado**
-> (sólo ratón `0xFF00`, configuración `0xFF01` y consumidor `0x0C`), y el EXE del
-> fabricante no importa `SendInput` ni `keybd_event`. O las teclas de este grupo
-> las envía el firmware por un camino que no vemos, o dependen de que la
-> aplicación esté abierta. Se comprueba en 2 minutos: asignar `Copy` a un botón,
-> **cerrar del todo** la aplicación del fabricante y pulsar el botón en el
-> Bloc de notas.
+> Important detail: the mouse descriptor **has no keyboard collection**
+> (only mouse `0xFF00`, configuration `0xFF01` and consumer `0x0C`), and the vendor's EXE does not import
+> `SendInput` or `keybd_event`. Either the keys of this group
+> are sent by the firmware through a path we do not see, or they depend on the
+> application being open. It takes 2 minutes to check: assign `Copy` to a button,
+> **fully close** the vendor application and press the button in
+> Notepad.
 
-## 5-ter. Macros: sí se guardan en el ratón
+## 5-ter. Macros: yes, they are stored on the mouse
 
-Contra lo que parecía al principio, **el contenido de las macros se sube al ratón**
-en cada Apply: el bloque `0x0400–0x04A7` del volcado contiene el flujo de pasos, y
-coincide con lo que muestra el editor. `constMacro.dat` es sólo la copia del PC
-(8 macros), la fuente desde la que se rellena ese bloque.
+Contrary to what it seemed at first, **the macro contents are uploaded to the mouse**
+on every Apply: the `0x0400–0x04A7` block of the dump contains the step flow, and
+it matches what the editor shows. `constMacro.dat` is only the PC copy
+(8 macros), the source from which that block is filled.
 
-Asignando a mano (pestaña Macro → elegir macro → Insert → Apply) la macro
-«first aid» (tecla `8`, 10 ms, tecla `8`, 20 ms) al botón 10, el fabricante escribió:
+Assigning by hand (Macro tab → choose macro → Insert → Apply) the
+"first aid" macro (key `8`, 10 ms, key `8`, 20 ms) to button 10, the vendor wrote:
 
-| byte | valor | significado |
+| byte | value | meaning |
 |---|---|---|
-| `0x0E` (botón 10) | `0x2D` | **acción = macro** (multimedia era `0x2F`, básica `0x21–0x3A`) |
-| `0xDC` (su ranura) | `01 02 ff 00 00 00 04 00 0A 00` | tipo `02` = macro, `00 00` = desplazamiento en el bloque, `0A 00` = longitud (10 bytes) |
-| `0x400` | `01 00 85 25 0A 25 00 00 01 00` | los 10 bytes del flujo de la macro |
+| `0x0E` (button 10) | `0x2D` | **action = macro** (multimedia was `0x2F`, basic `0x21–0x3A`) |
+| `0xDC` (its slot) | `01 02 ff 00 00 00 04 00 0A 00` | type `02` = macro, `00 00` = offset in the block, `0A 00` = length (10 bytes) |
+| `0x400` | `01 00 85 25 0A 25 00 00 01 00` | the 10 bytes of the macro flow |
 
-Dentro del flujo aparecen **usages HID de teclado**: `0x25` es la tecla `8` (`0x1E`
-= `1`, `0x1F` = `2`… `0x26` = `9`), que es exactamente la tecla de esa macro. O sea
-que el ratón guarda las teclas como usages HID, y un botón puede ejecutarlas sin la
-aplicación del fabricante.
+Inside the flow **HID keyboard usages** appear: `0x25` is key `8` (`0x1E`
+= `1`, `0x1F` = `2`… `0x26` = `9`), which is exactly the key of that macro. So
+the mouse stores keys as HID usages, and a button can execute them without the
+vendor application.
 
-El editor de macros admite además pasos de tipo XY (movimiento), CPI (cambio de
-DPI), LED y retardos, y opciones de repetición («Run Until release», «Run Until
-Click», «Repeat On = N»).
+The macro editor also supports steps of type XY (movement), CPI (DPI
+change), LED and delays, and repeat options ("Run Until release", "Run Until
+Click", "Repeat On = N").
 
-## 5-quater. LED: el bloque de luces está descifrado
+## 5-quater. LED: the lighting block is deciphered
 
-Medido con el arnés de Wine: se cambia **un** campo del `config.ini` que la
-herramienta carga, se ejecuta, y se compara la imagen que escribe con la base
-(`tools/probe/led_sweep.py`, resultados en `tools/probe/led_map.json`).
+Measured with the Wine harness: **one** field of the `config.ini` that the
+tool loads is changed, it is run, and the image it writes is compared with the baseline
+(`tools/probe/led_sweep.py`, results in `tools/probe/led_map.json`).
 
-| byte | contenido |
+| byte | content |
 |---|---|
-| `0x1C` | nibble alto = `LED_TYPE` (efecto); bajo = `LED_CYCTIME` (se recorta a 0–7) |
-| `0x1D` | `0x80 \| CYC_7COL_EN`: un bit por color, los que entran en el ciclo |
-| `0x20–0x31` | **seis pares**: nibble alto = `LED_USER0…5` (color de usuario), bajo = `DPI0…5` (color de la etapa) |
-| `0x3A` | bit `0x40` = `LED_FEATURE_SYMMETRY`, bit `0x10` = `LED_FEATURE_DIREC`; el resto (`0x0D` de fábrica) no se toca |
-| `0x3E` | nibble alto = `LED_USER6_R`, nibble bajo = `LED_USER6_G` |
-| `0x3F` | nibble alto = `LED_BRIGHT` (0–15); nibble bajo = `LED_USER6_B` |
+| `0x1C` | high nibble = `LED_TYPE` (effect); low = `LED_CYCTIME` (clamped to 0–7) |
+| `0x1D` | `0x80 \| CYC_7COL_EN`: one bit per colour, the ones that enter the cycle |
+| `0x20–0x31` | **six pairs**: high nibble = `LED_USER0…5` (user colour), low = `DPI0…5` (stage colour) |
+| `0x3A` | bit `0x40` = `LED_FEATURE_SYMMETRY`, bit `0x10` = `LED_FEATURE_DIREC`; the rest (`0x0D` from factory) is not touched |
+| `0x3E` | high nibble = `LED_USER6_R`, low nibble = `LED_USER6_G` |
+| `0x3F` | high nibble = `LED_BRIGHT` (0–15); low nibble = `LED_USER6_B` |
 
-**El nivel va invertido.** El LED es activo a nivel bajo: el byte guarda la
-"oscuridad" del canal y enciende con `15 − valor`. El canal sí está en su sitio
-(`0x20` R, `0x21` G, `0x22` B y en el 7º color `0x3E` alto R, `0x3E` bajo G,
-`0x3F` bajo B); lo que está al revés es el nivel.
+**The level is inverted.** The LED is active-low: the byte stores the channel's
+"darkness" and it lights with `15 − value`. The channel is in its place
+(`0x20` R, `0x21` G, `0x22` B and in the 7th colour `0x3E` high R, `0x3E` low G,
+`0x3F` low B); what is reversed is the level.
 
-Medido en el ratón, escribiendo tríos puros:
+Measured on the mouse, writing pure triples:
 
-| se escribe | se ve |
+| written | seen |
 |---|---|
-| `(15,0,0)` | `(0,255,255)` cian |
-| `(0,15,15)` | `(255,0,0)` rojo |
-| `(15,0,15)` | `(0,255,0)` verde |
+| `(15,0,0)` | `(0,255,255)` cyan |
+| `(0,15,15)` | `(255,0,0)` red |
+| `(15,0,15)` | `(0,255,0)` green |
 
-O sea: para pintar rojo hay que guardar `(0,15,15)`. El `config.ini` del
-fabricante no aplica esa inversión al leer ni al escribir, así que sus valores
-no son el color que sale; el configurador la hace en `web/core.js` (`lit()`), y
-el resto de la UI sigue hablando de `{r,g,b}` normales.
+So: to paint red you have to store `(0,15,15)`. The vendor `config.ini`
+does not apply that inversion when reading or writing, so its values
+are not the colour that comes out; the configurator does it in `web/core.js` (`lit()`), and
+the rest of the UI keeps talking about normal `{r,g,b}`.
 
-Sin confirmar: si el **brillo** (`0x3F` alto) va invertido también. Con el brillo
-a 0 de fábrica el ratón se enciende, así que o no va invertido o 0 significa
-"sin atenuar"; el configurador lo escribe tal cual hasta saberlo.
+Unconfirmed: whether the **brightness** (`0x3F` high) is inverted as well. With the brightness
+at 0 from factory the mouse lights up, so either it is not inverted or 0 means
+"no attenuation"; the configurator writes it as is until we know.
 
-Los canales son de **4 bits (0–15)**, igual que en el `config.ini`. Contrastado
-color a color con la configuración de fábrica: los siete `LED_USER*` y los seis
-`DPI*` salen exactamente como están en el ini, `LED_BRIGHT=0` con el nibble a 0,
-`CYC_7COL_EN=127` con los siete bits puestos y `LED_TYPE=9` es el modo que la
-herramienta llama **Star Trek**.
+The channels are **4 bits (0–15)**, as in `config.ini`. Cross-checked
+colour by colour with the factory configuration: the seven `LED_USER*` and the six
+`DPI*` come out exactly as they are in the ini, `LED_BRIGHT=0` with the nibble at 0,
+`CYC_7COL_EN=127` with the seven bits set and `LED_TYPE=9` is the mode the
+tool calls **Star Trek**.
 
-Cambiar el brillo de 0 a 1 mueve sólo `0x3F` (`0x00→0x10`), y de 0 a 7 lo pone
-en `0x70`; cambiar un color mueve **sólo** su byte, en el nibble que le toca.
+Changing the brightness from 0 to 1 moves only `0x3F` (`0x00→0x10`), and from 0 to 7 puts it
+at `0x70`; changing a colour moves **only** its byte, in the nibble that corresponds to it.
 
-**Modos: el desplegable del fabricante no describe el hardware.** Su lista tiene
-14 entradas, pero al elegir cada una y pulsar Apply escribe estos bytes (medido dos
-veces: forzando `LED_TYPE` en el ini y eligiendo el elemento en la UI con clic
-sostenido — `tools/probe/led_names_ui.py`, resultados en
+**Modes: the vendor dropdown does not describe the hardware.** Its list has
+14 entries, but picking each one and pressing Apply writes these bytes (measured twice:
+forcing `LED_TYPE` in the ini and picking the item in the UI with a held click —
+`tools/probe/led_names_ui.py`, results in
 `tools/probe/led_names_ui.json`):
 
-| entrada del desplegable | `0x1C` alto |
+| dropdown entry | `0x1C` high |
 |---|---|
 | 1 Breathing | 8 |
 | 2 Cycle breath | 9 |
@@ -424,114 +424,114 @@ sostenido — `tools/probe/led_names_ui.py`, resultados en
 | 10 Star Trek | **9** |
 | 11 Water | **10** |
 | 12 enraptured | **11** |
-| 13 Button response | 9 (y toca el tiempo de ciclo) |
-| 14 Mute | 8 (y toca el tiempo de ciclo) |
+| 13 Button response | 9 (and it touches the cycle time) |
+| 14 Mute | 8 (and it touches the cycle time) |
 
-O sea que el desplegable repite: "Flicker" y "Breathing" escriben lo mismo, y así
-cuatro pares. Los nombres del fabricante **no** coinciden con lo que hace el ratón.
+So the dropdown repeats: "Flicker" and "Breathing" write the same, and likewise
+four pairs. The vendor names do **not** match what the mouse does.
 
-**Lo que hace el ratón, mirando el LED** (no se puede leer, así que es observación
-directa escribiendo cada valor del nibble alto):
+**What the mouse does, watching the LED** (it cannot be read, so this is direct
+observation by writing each value of the high nibble):
 
-| `0x1C` alto | qué se ve |
+| `0x1C` high | what is seen |
 |---|---|
-| 8 | parpadeo nervioso |
-| 9 | color fijo, sin animación |
-| 10 | respiración, pero **con colores propios**: ignora los que están puestos |
-| 11 | recorrido tipo "Star Trek" |
-| 12–15 | **no enciende** |
-| 0–7 | sin medir (probablemente apagado: el bit `0x8` del nibble parece el "encendido") |
+| 8 | nervous blinking |
+| 9 | fixed colour, no animation |
+| 10 | breathing, but **with its own colours**: it ignores the ones that are set |
+| 11 | "Star Trek"-style sweep |
+| 12–15 | **does not light** |
+| 0–7 | not measured (probably off: bit `0x8` of the nibble seems to be "on") |
 
-Con eso, la pestaña Lighting sólo ofrece 8–11 y el resto se muestra como
-`no light (N)` o `unknown (N)` si el ratón ya venía así. Para barrer los valores que
-faltan sin tocar la UI está la **sonda de bytes** del panel Debug (escribe un byte en
-la imagen que se enviará con el siguiente Apply).
+With that, the Lighting tab only offers 8–11 and the rest is shown as
+`no light (N)` or `unknown (N)` if the mouse already came that way. To sweep the values that
+are missing without touching the UI there is the **byte probe** of the Debug panel (it writes a byte into
+the image that will be sent with the next Apply).
 
-Los bits de **simetría** (`0x3A & 0x40`) y **dirección** (`0x3A & 0x10`) tampoco han
-cambiado nada en ninguno de los cuatro efectos que encienden: siguen en la UI marcados
-como sin confirmar, y se conservan como los tenía la imagen de fábrica (`0x0D`).
+The **symmetry** (`0x3A & 0x40`) and **direction** (`0x3A & 0x10`) bits have not
+changed anything in any of the four effects that light up either: they stay in the UI marked
+as unconfirmed, and are preserved as the factory image had them (`0x0D`).
 
-El **tiempo de ciclo** está en el nibble bajo de `0x1C` y se recorta a 0–7. Las
-entradas "Button response" y "Mute" son las únicas que lo tocan (12 y 7), así que
-su comportamiento completo no está claro: podrían ser modos reactivo/apagado que
-este firmware no implementa igual.
+The **cycle time** is in the low nibble of `0x1C` and is clamped to 0–7. The
+"Button response" and "Mute" entries are the only ones that touch it (12 and 7), so
+their complete behaviour is unclear: they could be reactive/off modes that
+this firmware does not implement the same way.
 
-**Lo que no llega a la imagen** (barrido sin ningún byte cambiado): `LED_CYC_TIME`
-(la velocidad del ciclo), `LED_USER_COLOR`, `LED_FEATURE_SCOLOR`, `LED_TYPE_SW_EN*`,
-`WHEEL_SPEED`, `DPI_SPEED` y los `LED_REACT_*` por botón. O viven en los registros
-de `0x00A0–0x02CF`, o los aplica el firmware sin guardarlos.
+**What does not reach the image** (sweep with no byte changed): `LED_CYC_TIME`
+(the cycle speed), `LED_USER_COLOR`, `LED_FEATURE_SCOLOR`, `LED_TYPE_SW_EN*`,
+`WHEEL_SPEED`, `DPI_SPEED` and the per-button `LED_REACT_*`. Either they live in the registers
+of `0x00A0–0x02CF`, or the firmware applies them without storing them.
 
-**Sin resolver.** `0x33` cambia al cambiar de modo (`0xBF` con Star Trek, `0x3F`
-con Breathing) y no sabemos qué es; el configurador no lo toca. `0x32–0x39` están
-a cero en la imagen de fábrica. `LED_CYCTIME` sólo se ha visto recortado (15→7).
+**Unresolved.** `0x33` changes when changing mode (`0xBF` with Star Trek, `0x3F`
+with Breathing) and we do not know what it is; the configurator does not touch it. `0x32–0x39` are
+at zero in the factory image. `LED_CYCTIME` has only been seen clamped (15→7).
 
-### Cómo lo usa el configurador web
+### How the web configurator uses it
 
-`web/core.js` codifica una macro como **10 bytes por paso** (`01 00 83 <usage>
-<retardo> <usage> 00 00 01 00`), la misma forma que la captura de un paso del
-fabricante, y la asigna al botón con `0x2D` + el registro de la ranura. El byte
-`0x83` es el de la captura «map»; en «first aid» el fabricante puso `0x85`, así
-que ese byte sigue abierto: **las macros de más de un paso son una extrapolación
-y no están probadas en el ratón**. El editor limita a 16 pasos (168 B de `0x400`,
-el bloque completo) y no escribe un flujo que no quepa.
+`web/core.js` encodes a macro as **10 bytes per step** (`01 00 83 <usage>
+<delay> <usage> 00 00 01 00`), the same shape as the capture of one vendor
+step, and assigns it to the button with `0x2D` + the register of the slot. The byte
+`0x83` is the one from the "map" capture; in "first aid" the vendor put `0x85`, so
+that byte remains open: **macros of more than one step are an extrapolation
+and are not tested on the mouse**. The editor limits to 16 steps (168 B from `0x400`,
+the whole block) and does not write a flow that does not fit.
 
-### Lo que falta para «asignar una tecla directamente»
+### What is missing to "assign a key directly"
 
-El flujo de 10 bytes de «first aid» codifica **dos** pasos de tecla en 10 bytes, así
-que cada paso ocupa ~5 bytes (usage + retardo + flags), pero con una sola muestra no
-se puede fijar el reparto exacto. Plan para cerrarlo:
+The 10-byte "first aid" flow encodes **two** key steps in 10 bytes, so
+each step takes ~5 bytes (usage + delay + flags), but with a single sample the
+exact split cannot be fixed. Plan to close it:
 
-1. Crear tres macros de un solo paso en la herramienta (tecla `A`, `Shift` solo,
-   `Ctrl+C`) con el diálogo «Please enter the key».
-2. Aplicar y volcar: cada flujo tendrá 5 bytes y el usage dirá qué campo es cuál.
-3. Con eso, «asignar tecla» = escribir un flujo de 5-10 bytes + el registro
-   `01 02 ff…` + el byte `0x2D` en el botón. La interfaz puede mostrarlo como
-   «Tecla: Shift» sin que el usuario vea macros.
+1. Create three single-step macros in the tool (key `A`, `Shift` alone,
+   `Ctrl+C`) with the "Please enter the key" dialogue.
+2. Apply and dump: each flow will have 5 bytes and the usage will say which field is which.
+3. With that, "assign key" = write a 5-10 byte flow + the register
+   `01 02 ff…` + the byte `0x2D` on the button. The interface can show it as
+   "Key: Shift" without the user seeing macros.
 
-Receta para manejar la herramienta bajo Wine (necesaria para esos volcados):
+Recipe for driving the tool under Wine (needed for those dumps):
 
 ```bash
-docker exec g6re-run bash /work/tools/probe/ui.sh start     # arranca la app
-docker exec g6re-run bash /work/tools/probe/ui.sh click 371 212   # pestaña Macro
+docker exec g6re-run bash /work/tools/probe/ui.sh start     # starts the app
+docker exec g6re-run bash /work/tools/probe/ui.sh click 371 212   # Macro tab
 docker exec g6re-run bash /work/tools/probe/ui.sh shot paso1
 docker exec g6re-run bash /work/tools/probe/ui.sh save mi_captura
 ```
 
-Ojo: el botón Apply sólo responde si antes se mueve el cursor encima
-(`move 853 850` y después `click 853 850`), y el grabador de macros no captura
-teclas sintéticas de `xdotool`; hay que usar Insert → «Please enter the key».
+Note: the Apply button only responds if the cursor is moved over it first
+(`move 853 850` and then `click 853 850`), and the macro recorder does not capture
+synthetic keys from `xdotool`; you have to use Insert → "Please enter the key".
 
-## 6. Qué queda abierto
+## 6. What remains open
 
-* Correspondencia **código DPI → dpi real** (medir en el ratón).
-* Reparto/allocación de los **registros de acciones avanzadas** (`0x0490`, `0x04a8`,
-  `0x0460`… según qué botones las usan).
-* Formato de los **registros de acciones avanzadas y macros** (`0x00A0–0x02CF`,
-  `0x0400–0x04A7`): se generan al elegir acciones ≥21 y contienen los punteros de
-  `0x006E`. Sin descifrar.
-* Codificación de **colores LED** por etapa, `LED_CYC_TIME`, `WHEEL_SPEED`,
-  `DPI_SPEED` (los incrementos de 1 no cambian ningún byte: o se cuantizan o viven
-  en los registros).
-* Semántica de lectura multi-byte (índice como desplazamiento).
-* Si `0x0080–0x009F` es almacenamiento de perfiles 3/4 sin usar.
+* **DPI code → real dpi** correspondence (measure on the mouse).
+* Distribution/allocation of the **advanced action registers** (`0x0490`, `0x04a8`,
+  `0x0460`… depending on which buttons use them).
+* Format of the **advanced action and macro registers** (`0x00A0–0x02CF`,
+  `0x0400–0x04A7`): they are generated when picking actions ≥21 and contain the pointers of
+  `0x006E`. Not deciphered.
+* Encoding of **LED colours** per stage, `LED_CYC_TIME`, `WHEEL_SPEED`,
+  `DPI_SPEED` (increments of 1 change no byte: either they are quantised or they live
+  in the registers).
+* Semantics of multi-byte reading (index as offset).
+* Whether `0x0080–0x009F` is unused profile 3/4 storage.
 
-## 7. Cómo seguir investigando
+## 7. How to keep investigating
 
 ```bash
-# imagen de Wine lista para el EXE + el shim
+# Wine image ready for the EXE + the shim
 docker build -f tools/Dockerfile.wine -t g6re:local .
 docker run -d --name g6re-run -v "$PWD":/work -w /work g6re:local sleep infinity
 
-# una pasada: arranca, pulsa OK, guarda el tráfico en tools/probe/<nombre>.log
+# one pass: starts, presses OK, saves the traffic to tools/probe/<name>.log
 docker exec g6re-run bash /work/tools/probe/probe.sh baseline
 
-# cambiar un campo y ver qué bytes cambian
+# change one field and see which bytes change
 python3 tools/probe/sweep.py Config0.K0 ShareData.DPI_SET0
 
-# recomponer la memoria que el programa escribió
+# rebuild the memory the program wrote
 python3 tools/probe/parse_log.py tools/probe/baseline.log --mem
 ```
 
-En hardware real, lo primero es confirmar la lectura:
-`python3 tools/g6cli.py dump` (guarda un backup) y comparar con lo que escribe el
-programa del fabricante para la misma configuración.
+On real hardware, the first thing is to confirm reading:
+`python3 tools/g6cli.py dump` (it saves a backup) and compare with what the
+vendor program writes for the same configuration.
