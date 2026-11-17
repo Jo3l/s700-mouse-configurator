@@ -1,0 +1,21 @@
+[package]
+name = "s700-host"
+version = "0.1.0"
+edition = "2021"
+description = "Host nativo del configurador S700: sirve la UI y habla el HID del ratón sin permisos de navegador"
+publish = false
+
+[[bin]]
+name = "s700-host"
+path = "src/main.rs"
+
+# Sin dependencias: el binario se compila sin red y sin librerías del sistema
+# (hidraw en Linux, hid.dll en Windows) más allá de la libc.
+[dependencies]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

@@ -1,0 +1,6 @@
+FROM debian:bookworm
+ENV DEBIAN_FRONTEND=noninteractive WINEDEBUG=-all WINEPREFIX=/wine
+RUN dpkg --add-architecture i386 && apt-get update && apt-get install -y --no-install-recommends \
+    wine wine32:i386 xvfb x11-utils xdotool imagemagick python3 python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /work

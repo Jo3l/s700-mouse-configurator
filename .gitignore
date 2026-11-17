@@ -1,0 +1,29 @@
+# backups y artefactos locales
+*.pyc
+__pycache__/
+s700-backup*.json
+mi-raton.json
+
+# logs de captura que no son el de referencia
+tools/probe/*.log
+!tools/probe/baseline.log
+tools/probe/in.ini
+
+# capturas del arnés de Wine (se regeneran; se guarda la del desplegable como prueba)
+tools/probe/*.png
+!tools/probe/vendor_led_modes.png
+tools/probe/debug/
+
+# software del fabricante: tiene copyright, no se publica
+original/
+
+# claves TLS de desarrollo
+certs/
+
+# binarios y artefactos de compilación
+dist/
+native/target/
+
+# dependencias de análisis traídas con pip --target
+tools/pylibs/
+node_modules/

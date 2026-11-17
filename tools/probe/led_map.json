@@ -1,0 +1,228 @@
+{
+ "ShareData.LED_USER0_R=15": {
+  "0x0020": [
+   0,
+   240
+  ]
+ },
+ "ShareData.LED_USER0_G=15": {
+  "0x0021": [
+   15,
+   255
+  ]
+ },
+ "ShareData.LED_USER0_B=0": {
+  "0x0022": [
+   240,
+   0
+  ]
+ },
+ "ShareData.LED_USER1_R=0": {
+  "0x0023": [
+   255,
+   15
+  ]
+ },
+ "ShareData.DPI0_R=15": {
+  "0x0020": [
+   0,
+   15
+  ]
+ },
+ "ShareData.DPI0_G=0": {
+  "0x0021": [
+   15,
+   0
+  ]
+ },
+ "ShareData.LED_CYC_TIME=15": {},
+ "ShareData.LED_BRIGHT=7": {
+  "0x003f": [
+   0,
+   112
+  ]
+ },
+ "ShareData.LED_USER6_R=15": {
+  "0x003e": [
+   15,
+   255
+  ]
+ },
+ "ShareData.LED_USER6_G=0": {
+  "0x003e": [
+   15,
+   0
+  ]
+ },
+ "ShareData.LED_USER6_B=15": {
+  "0x003f": [
+   0,
+   15
+  ]
+ },
+ "ShareData.CYC_7COL_EN=0": {
+  "0x001d": [
+   255,
+   128
+  ]
+ },
+ "ShareData.LED_USER_COLOR=0": {},
+ "ShareData.LED_FEATURE_SCOLOR=1": {},
+ "ShareData.LED_FEATURE_SYMMETRY=1": {
+  "0x003a": [
+   13,
+   77
+  ]
+ },
+ "ShareData.LED_FEATURE_DIREC=1": {
+  "0x003a": [
+   13,
+   29
+  ]
+ },
+ "ShareData.LED_TYPE_SW_EN0=1": {},
+ "ShareData.DPI5_R=0": {
+  "0x002f": [
+   255,
+   240
+  ]
+ },
+ "ShareData.LED_CYCTIME=15": {
+  "0x001c": [
+   148,
+   151
+  ]
+ },
+ "ShareData.CYC_7COL_EN=1": {
+  "0x001d": [
+   255,
+   129
+  ]
+ },
+ "ShareData.LED_USER2_B=15": {
+  "0x0028": [
+   0,
+   240
+  ]
+ },
+ "ShareData.DPI4_G=0": {
+  "0x002d": [
+   255,
+   240
+  ]
+ },
+ "ShareData.LED_TYPE=0": {
+  "0x001c": [
+   148,
+   132
+  ],
+  "0x0033": [
+   191,
+   63
+  ]
+ },
+ "ShareData.LED_TYPE=1": {
+  "0x0033": [
+   191,
+   63
+  ]
+ },
+ "ShareData.LED_TYPE=2": {
+  "0x001c": [
+   148,
+   164
+  ],
+  "0x0033": [
+   191,
+   63
+  ]
+ },
+ "ShareData.LED_TYPE=3": {
+  "0x001c": [
+   148,
+   180
+  ],
+  "0x0033": [
+   191,
+   63
+  ]
+ },
+ "ShareData.LED_TYPE=4": {
+  "0x001c": [
+   148,
+   196
+  ],
+  "0x0033": [
+   191,
+   63
+  ]
+ },
+ "ShareData.LED_TYPE=5": {
+  "0x001c": [
+   148,
+   212
+  ],
+  "0x0033": [
+   191,
+   63
+  ]
+ },
+ "ShareData.LED_TYPE=6": {
+  "0x001c": [
+   148,
+   228
+  ],
+  "0x0033": [
+   191,
+   63
+  ]
+ },
+ "ShareData.LED_TYPE=7": {
+  "0x001c": [
+   148,
+   244
+  ],
+  "0x0033": [
+   191,
+   63
+  ]
+ },
+ "ShareData.LED_TYPE=8": {
+  "0x001c": [
+   148,
+   132
+  ]
+ },
+ "ShareData.LED_TYPE=10": {
+  "0x001c": [
+   148,
+   164
+  ]
+ },
+ "ShareData.LED_TYPE=11": {
+  "0x001c": [
+   148,
+   180
+  ]
+ },
+ "ShareData.LED_TYPE=12": {
+  "0x001c": [
+   148,
+   156
+  ],
+  "0x0033": [
+   191,
+   63
+  ]
+ },
+ "ShareData.LED_TYPE=13": {
+  "0x001c": [
+   148,
+   135
+  ],
+  "0x0033": [
+   191,
+   63
+  ]
+ }
+}
