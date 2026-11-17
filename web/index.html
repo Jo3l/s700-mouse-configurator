@@ -254,6 +254,17 @@
           <button id="btnCopy" disabled>Copy diagnostic</button>
         </div>
         <pre id="device" class="mono">(no device)</pre>
+        <div id="linPerm" hidden style="margin-top:12px">
+          <p class="hint" style="margin-top:0">
+            <b>Linux:</b> the mouse node (<span class="mono" id="linPermNode">/dev/hidraw*</span>) belongs to
+            root, so this user cannot open it. Install the udev rule once — your desktop asks for your
+            password — and from then on both this window and Chrome use the mouse with nothing else to do.
+          </p>
+          <div class="row">
+            <button id="btnInstallRule" class="primary">Install udev rule</button>
+            <span class="mono hint" id="linPermState" style="margin-left:auto"></span>
+          </div>
+        </div>
       </div>
     </section>
 

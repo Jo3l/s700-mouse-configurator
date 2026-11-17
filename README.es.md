@@ -15,7 +15,7 @@
 |---|---|
 | **usarlo sin descargar nada** | **<https://jo3l.github.io/s700-mouse-configurator/>** — la herramienta servida, con WebHID; abre la página y pulsa *Connect mouse* |
 | **Windows** | [`s700-host-windows-x86_64.exe`](https://github.com/Jo3l/s700-mouse-configurator/releases/latest) — doble clic y ya: abre el navegador solo, con la interfaz cargada, y habla con el ratón él mismo; sin permisos ni instalador |
-| **Linux** | [`s700-host-linux-x86_64`](https://github.com/Jo3l/s700-mouse-configurator/releases/latest) + `99-s700-hid.rules` (una vez: `sudo cp 99-s700-hid.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules`) |
+| **Linux** | [`s700-host-linux-x86_64`](https://github.com/Jo3l/s700-mouse-configurator/releases/latest) — ejecútalo; si no puede abrir el ratón te ofrece instalar la regla udev y te pide la contraseña una vez |
 | **un solo fichero HTML** | `S700-configurator.html` de la release: se abre con doble clic en Chrome/Edge/Brave, sin servidor |
 
 Los binarios los compila GitHub Actions al publicar cada versión
@@ -83,15 +83,20 @@ abren en exclusiva y el ratón no se deja.
 ### Linux
 
 ```bash
-sudo cp native/99-s700-hid.rules /etc/udev/rules.d/     # una vez
-sudo udevadm control --reload-rules && sudo udevadm trigger
-
 make native && ./native/target/release/s700-host          # o: make native-run
 ./native/target/release/s700-host --list                  # ¿ve el ratón?
+./native/target/release/s700-host --install-rule           # sólo si no puede abrirlo
 ```
 
-El nodo `/dev/hidraw*` es `0600 root:root` en el kernel: eso lo necesitas igual con
-el navegador, no es cosa de esta herramienta.
+El nodo `/dev/hidraw*` es `0600 root:root` en el kernel, así que alguien tiene que
+dar acceso — el navegador también lo necesita. El binario no te manda copiar nada: si
+no puede abrir el ratón lo dice y se ofrece a instalar la regla, desde la pestaña
+*Debug* (**Install udev rule**) o con `--install-rule`. Tu escritorio pide la
+contraseña una vez (`pkexec`) y a partir de ahí todo corre como tu usuario normal.
+
+Lo que **no** hace, a propósito, es ejecutar el servidor como root: funcionaría sin
+regla, pero dejaría un servidor HTTP local con acceso al dispositivo corriendo como
+root. Una regla udev atada a un VID:PID es una puerta mucho más pequeña.
 
 ### Navegador, sin instalar nada
 

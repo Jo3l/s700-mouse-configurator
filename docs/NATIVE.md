@@ -64,13 +64,33 @@ open exclusively.
 
 **Linux**: the kernel exposes `/dev/hidrawN` as `0600 root:root`. Neither Chrome
 nor this binary can write without a rule; the binary does **not** bypass that
-(it would be a hole, not an improvement). The rule is included:
+(it would be a hole, not an improvement). What it does is offer to install the
+rule for you, once, with the normal desktop password dialog:
+
+* **from the UI**: the *Debug* tab notices the node is not openable and shows
+  **Install udev rule**. The binary asks for your password with `pkexec` and
+  writes the rule; from then on everything runs as your user, Chrome included.
+* **from a terminal**: `./s700-host --install-rule` (same thing, no window).
+* **by hand**, if you prefer to see what it touches:
 
 ```
 sudo cp native/99-s700-hid.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger
 # and reconnect the mouse (or restart the session) so logind applies the ACL
 ```
+
+The state behind that button is `GET /api/permissions`
+(`needed`, `root`, `ruleInstalled`, `node`, `writable`), and
+`POST /api/install-rule` runs the elevation and returns its log.
+
+**Do not run the server as root.** `sudo ./s700-host` "works" and needs no rule,
+but it would leave a local HTTP server able to write to a device running as root,
+which is a much bigger hole than a udev rule scoped to one VID:PID. The rule is a
+one-time, per-device, per-seat grant; root is forever and for everything.
+
+If you are on a machine with no seat (SSH, no `logind` session), `uaccess` cannot
+give you the node: the rule also sets `MODE="0660" GROUP="input"`, so add yourself
+to `input` instead (`sudo usermod -aG input $USER`, then log out and back in).
 
 ```
 $ ./s700-host --list

@@ -15,7 +15,7 @@
 |---|---|
 | **use it without downloading anything** | **<https://jo3l.github.io/s700-mouse-configurator/>** — the tool served as a web page (WebHID); open it and press *Connect mouse* |
 | **Windows** | [`s700-host-windows-x86_64.exe`](https://github.com/Jo3l/s700-mouse-configurator/releases/latest) — double click and that is it: it opens your browser with the UI already loaded and talks to the mouse itself; no permissions, no installer |
-| **Linux** | [`s700-host-linux-x86_64`](https://github.com/Jo3l/s700-mouse-configurator/releases/latest) + `99-s700-hid.rules` (once: `sudo cp 99-s700-hid.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules`) |
+| **Linux** | [`s700-host-linux-x86_64`](https://github.com/Jo3l/s700-mouse-configurator/releases/latest) — run it; if it cannot open the mouse it offers to install the udev rule and asks for your password once |
 | **a single HTML file** | `S700-configurator.html` from the release: double click it in Chrome/Edge/Brave, no server needed |
 
 The binaries are built by GitHub Actions on every release
@@ -83,15 +83,20 @@ device exclusively.
 ### Linux
 
 ```bash
-sudo cp native/99-s700-hid.rules /etc/udev/rules.d/     # once
-sudo udevadm control --reload-rules && sudo udevadm trigger
-
 make native && ./native/target/release/s700-host          # or: make native-run
 ./native/target/release/s700-host --list                  # does it see the mouse?
+./native/target/release/s700-host --install-rule           # only if it cannot open it
 ```
 
-`/dev/hidraw*` is `0600 root:root` in the kernel: every tool needs that rule, the
-browser included. It is not a quirk of this one.
+`/dev/hidraw*` is `0600 root:root` in the kernel, so someone has to grant access —
+the browser needs it too. The binary does not ask you to copy anything: if it cannot
+open the mouse it says so and offers to install the rule, either from the *Debug* tab
+(**Install udev rule**) or with `--install-rule`. Either way your desktop asks for
+your password once (`pkexec`) and from then on everything runs as your normal user.
+
+What it deliberately does **not** do is run the server as root: that would work
+without any rule, but it would leave a local HTTP server with device access running
+as root. A udev rule scoped to one VID:PID is a much smaller door.
 
 ### Browser only
 

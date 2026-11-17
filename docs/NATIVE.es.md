@@ -64,13 +64,34 @@ abierto en exclusiva.
 
 **Linux**: el kernel expone `/dev/hidrawN` como `0600 root:root`. Ni Chrome ni
 este binario pueden escribir sin una regla; el binario **no** se salta eso
-(sería un agujero, no una mejora). La regla va incluida:
+(sería un agujero, no una mejora). Lo que sí hace es ofrecerse a instalar la regla
+por ti, una vez, con el diálogo de contraseña normal del escritorio:
+
+* **desde la interfaz**: la pestaña *Debug* detecta que el nodo no se puede abrir y
+  muestra **Install udev rule**. El binario pide la contraseña con `pkexec` y escribe
+  la regla; a partir de ahí todo corre como tu usuario, Chrome incluido.
+* **desde una terminal**: `./s700-host --install-rule` (lo mismo, sin ventana).
+* **a mano**, si prefieres ver qué toca:
 
 ```
 sudo cp native/99-s700-hid.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger
 # y reconectar el ratón (o reiniciar la sesión) para que logind aplique el ACL
 ```
+
+El estado que hay detrás de ese botón es `GET /api/permissions`
+(`needed`, `root`, `ruleInstalled`, `node`, `writable`), y `POST /api/install-rule`
+hace la elevación y devuelve su salida.
+
+**No ejecutes el servidor como root.** `sudo ./s700-host` "funciona" y no necesita
+regla, pero deja un servidor HTTP local con capacidad de escribir en un dispositivo
+corriendo como root: un agujero mucho mayor que una regla udev atada a un VID:PID.
+La regla es un permiso puntual, por dispositivo y por sesión; root es para siempre y
+para todo.
+
+En una máquina sin sesión de escritorio (SSH, sin `logind`), `uaccess` no te da el
+nodo: la regla también pone `MODE="0660" GROUP="input"`, así que añádete a `input`
+(`sudo usermod -aG input $USER` y vuelve a entrar).
 
 ```
 $ ./s700-host --list

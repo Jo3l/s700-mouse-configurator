@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 const src = readFileSync(new URL("../web/bridge.js", import.meta.url), "utf8");
+const main = readFileSync(new URL("../native/src/main.rs", import.meta.url), "utf8");
 let ok = 0, bad = 0;
 const check = (name, cond, extra = "") => {
   if (cond) { ok++; console.log("ok   " + name); }
@@ -99,3 +100,12 @@ function load({ api = null, routes = {} } = {}) {
 
 console.log(`${ok} checks passed${bad ? ", " + bad + " FAILED" : ""}`);
 process.exit(bad ? 1 : 0);
+
+// el host expone el estado de permisos y la instalación de la regla udev
+check("main.rs sirve /api/permissions y /api/install-rule",
+  main.includes('"/api/permissions"') && main.includes('"/api/install-rule"') &&
+  main.includes("fn permissions_json") && main.includes("fn elevate_install"));
+check("la regla udev viaja dentro del binario",
+  /include_str!\("\.\.\/99-s700-hid\.rules"\)/.test(main));
+check("--install-rule se reejecuta con pkexec",
+  main.includes('"--install-rule"') && main.includes('Command::new("pkexec")'));

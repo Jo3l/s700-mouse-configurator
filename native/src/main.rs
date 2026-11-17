@@ -24,6 +24,9 @@ const DEBUGJS: &str = include_str!("../../web/debug.js");
 const IMAGE: &str = include_str!("../../web/default_image.js");
 const BRIDGE: &str = include_str!("../../web/bridge.js");
 const MOUSE_PNG: &[u8] = include_bytes!("../../web/mouse.png");
+// la regla udev viaja dentro del binario: --install-rule la escribe y recarga udev
+const RULES: &str = include_str!("../99-s700-hid.rules");
+const RULES_PATH: &str = "/etc/udev/rules.d/99-s700-hid.rules";
 
 const DEFAULT_PORT: u16 = 8760;
 
@@ -43,7 +46,7 @@ fn main() {
                     match v.parse::<u16>() {
                         Ok(p) => port = p,
                         Err(_) => {
-                            eprintln!("puerto inválido: {v}");
+                            eprintln!("invalid port: {v}");
                             std::process::exit(2);
                         }
                     }
@@ -54,19 +57,27 @@ fn main() {
             "--list" => {
                 let devs = hid::enumerate();
                 if devs.is_empty() {
-                    println!("no hay interfaces con el vendor page 0xFF00 a la vista");
+                    println!("no interfaces with vendor page 0xFF00 in sight");
                 }
                 for d in devs {
                     println!("{}\t{:04x}:{:04x}\t{}", d.path, d.vid, d.pid, d.name);
                 }
                 return;
             }
+            "--install-rule" => {
+                let (ok, log) = elevate_install();
+                print!("{log}");
+                if !log.ends_with('\n') {
+                    println!();
+                }
+                std::process::exit(if ok { 0 } else { 1 });
+            }
             "-h" | "--help" => {
                 help();
                 return;
             }
             other => {
-                eprintln!("no entiendo «{other}»");
+                eprintln!("unknown argument «{other}»");
                 help();
                 std::process::exit(2);
             }
@@ -78,21 +89,148 @@ fn main() {
 
 fn help() {
     println!(
-        "s700-host [--port N] [--no-open] [--list]\n\
-         \n\
-           --port N    puerto local (por defecto {DEFAULT_PORT}); fíjalo para que el\n\
-                       almacenamiento del navegador (localStorage) siga siendo el mismo\n\
-           --no-open   no abrir el navegador\n\
-           --list      enumerar las interfaces HID del ratón y salir"
+        "s700-host [--port N] [--no-open] [--list] [--install-rule]
+
+  --port N        local port ({DEFAULT_PORT} by default); keep it so the browser
+                  storage (localStorage) stays the same
+  --no-open       do not open the browser
+  --list          list the mouse's HID interfaces and exit
+  --install-rule  Linux only: write the udev rule that lets this user open
+                  /dev/hidraw*, then reload udev; asks for your password with
+                  pkexec, so there is no cp and no terminal needed"
     );
+}
+
+
+fn is_root() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
+            if let Some(line) = status.lines().find(|l| l.starts_with("Uid:")) {
+                return line.split_whitespace().nth(1) == Some("0");
+            }
+        }
+        false
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
+fn rule_installed() -> bool {
+    std::path::Path::new(RULES_PATH).exists()
+}
+
+fn node_writable(node: &str) -> bool {
+    std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(node)
+        .is_ok()
+}
+
+/// Escribe la regla y recarga udev. Sólo tiene sentido como root.
+fn install_rule_as_root() -> (bool, String) {
+    if let Err(e) = std::fs::write(RULES_PATH, RULES) {
+        return (false, format!("cannot write {RULES_PATH}: {e}\n"));
+    }
+    let mut log = format!("wrote {RULES_PATH}\n");
+    for args in [vec!["control", "--reload-rules"], vec!["trigger"]] {
+        match std::process::Command::new("udevadm").args(&args).output() {
+            Ok(out) if out.status.success() => log.push_str(&format!("udevadm {} ok\n", args.join(" "))),
+            Ok(out) => log.push_str(&format!(
+                "udevadm {}: {}\n",
+                args.join(" "),
+                String::from_utf8_lossy(&out.stderr).trim()
+            )),
+            Err(e) => log.push_str(&format!("udevadm {}: {e}\n", args.join(" "))),
+        }
+    }
+    log.push_str("unplug and replug the mouse if the node does not switch owner right away\n");
+    (true, log)
+}
+
+/// Instala la regla: directa si ya somos root, si no reejecutándose con pkexec,
+/// que es lo que muestra el diálogo de contraseña del escritorio.
+fn elevate_install() -> (bool, String) {
+    if is_root() {
+        return install_rule_as_root();
+    }
+    let exe = std::env::current_exe()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| "s700-host".to_string());
+    match std::process::Command::new("pkexec")
+        .arg(&exe)
+        .arg("--install-rule")
+        .output()
+    {
+        Ok(out) if out.status.success() => {
+            (true, String::from_utf8_lossy(&out.stdout).trim().to_string() + "\n")
+        }
+        Ok(out) => {
+            let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            if err.is_empty() {
+                (false, "pkexec was cancelled\n".to_string())
+            } else {
+                (false, format!("pkexec: {err}\n"))
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => (
+            false,
+            format!(
+                "no pkexec on this system. Run once, by hand:\n  \
+                 sudo {exe} --install-rule\n"
+            ),
+        ),
+        Err(e) => (false, format!("pkexec: {e}\n")),
+    }
+}
+
+/// Estado que consulta la UI para ofrecer el botón de instalar la regla.
+fn permissions_json() -> String {
+    #[cfg(target_os = "linux")]
+    {
+        let devs = hid::enumerate();
+        let node = devs.first().map(|d| d.path.clone());
+        let writable = node.as_ref().map(|n| node_writable(n)).unwrap_or(false);
+        let needed = node.is_some() && !writable;
+        let node_json = match &node {
+            Some(n) => format!("\"{}\"", esc(n)),
+            None => "null".to_string(),
+        };
+        format!(
+            "{{\"ok\":true,\"platform\":\"linux\",\"needed\":{needed},\"root\":{},\"ruleInstalled\":{},\"node\":{node_json},\"writable\":{writable}}}",
+            is_root(),
+            rule_installed()
+        )
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        String::from(
+            "{\"ok\":true,\"platform\":\"windows\",\"needed\":false,\"root\":false,\"ruleInstalled\":true,\"node\":null,\"writable\":true}",
+        )
+    }
+}
+
+fn install_rule_json() -> String {
+    #[cfg(target_os = "linux")]
+    {
+        let (ok, log) = elevate_install();
+        format!("{{\"ok\":{ok},\"log\":\"{}\"}}", esc(log.trim()))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        String::from("{\"ok\":true,\"log\":\"nothing to do on Windows\"}")
+    }
 }
 
 fn serve(port: u16, launch: bool) {
     let listener = match TcpListener::bind(("127.0.0.1", port)) {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("no puedo escuchar en 127.0.0.1:{port}: {e}");
-            eprintln!("prueba con --port {0}", port.saturating_add(1).max(1024));
+            eprintln!("cannot listen on 127.0.0.1:{port}: {e}");
+            eprintln!("try --port {0}", port.saturating_add(1).max(1024));
             std::process::exit(1);
         }
     };
@@ -102,13 +240,13 @@ fn serve(port: u16, launch: bool) {
     println!("s700-host · {url}");
     let devs = hid::enumerate();
     if devs.is_empty() {
-        println!("  ratón: no encontrado (0 interfaces 0xFF00) — conéctalo y pulsa Connect");
+        println!("  mouse: not found (0 interfaces 0xFF00) — plug it in and press Connect");
     } else {
         for d in &devs {
-            println!("  ratón: {} {:04x}:{:04x} {}", d.path, d.vid, d.pid, d.name);
+            println!("  mouse: {} {:04x}:{:04x} {}", d.path, d.vid, d.pid, d.name);
         }
     }
-    println!("  Ctrl+C para parar");
+    println!("  Ctrl+C to stop");
 
     if launch {
         open_browser(&url);
@@ -121,7 +259,7 @@ fn serve(port: u16, launch: bool) {
                     let _ = handle(&host, stream);
                 });
             }
-            Err(e) => eprintln!("conexión: {e}"),
+            Err(e) => eprintln!("connection: {e}"),
         }
     }
 }
@@ -201,6 +339,14 @@ fn handle(host: &Host, mut conn: TcpStream) -> std::io::Result<()> {
                 .and_then(|g| g.as_ref().map(|d| d.name.clone()))
                 .unwrap_or_default();
             let out = format!("{{\"ok\":true,\"open\":{open},\"name\":\"{}\"}}", esc(&name));
+            respond(&mut conn, "200 OK", "application/json", out.as_bytes())
+        }
+        ("GET", "/api/permissions") => {
+            let out = permissions_json();
+            respond(&mut conn, "200 OK", "application/json", out.as_bytes())
+        }
+        ("POST", "/api/install-rule") => {
+            let out = install_rule_json();
             respond(&mut conn, "200 OK", "application/json", out.as_bytes())
         }
         ("POST", "/api/open") => {

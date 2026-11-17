@@ -1193,6 +1193,49 @@ $("btnPoke").onclick = addPoke;
 $("btnPokeClear").onclick = () => { pokes.clear(); renderPokes(); render(); };
 renderPokes();
 
+// ------------------------------------------------------ permisos (host nativo)
+// En Linux el nodo /dev/hidraw* es de root. Si el host nativo dice que no puede
+// abrirlo, se ofrece instalar la regla udev: el binario pide la contraseña con
+// pkexec, así que no hay que copiar nada a mano ni ejecutar el servidor como root.
+async function checkPermissions() {
+  const api = window.__S700_API__;
+  if (!api || typeof fetch !== "function" || !$("linPerm")) return;
+  let state;
+  try {
+    state = await (await fetch(`${api}/permissions`)).json();
+  } catch (e) {
+    return;                        // host sin esta ruta (binario anterior)
+  }
+  $("linPerm").hidden = !state.needed;
+  if (!state.needed) return;
+  $("linPermNode").textContent = state.node || "/dev/hidraw*";
+  $("linPermState").textContent = state.ruleInstalled
+    ? "rule is there but the node is still closed — unplug and replug the mouse"
+    : "";
+}
+
+$("btnInstallRule").onclick = async () => {
+  const api = window.__S700_API__;
+  if (!api) return;
+  const btn = $("btnInstallRule");
+  btn.disabled = true;
+  $("linPermState").textContent = "asking for your password…";
+  try {
+    const res = await (await fetch(`${api}/install-rule`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: "{}",
+    })).json();
+    $("linPermState").textContent = res.ok
+      ? "rule installed — unplug and replug the mouse, then press Connect"
+      : (res.log || "could not install the rule");
+  } catch (e) {
+    $("linPermState").textContent = String(e);
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+checkPermissions();
+
 buildLedRows();
 restoreOnLoad();
 renderStorage();

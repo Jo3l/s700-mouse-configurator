@@ -53,6 +53,12 @@ inPanel(mainPanel, ["profiles", "buttons", "dpi", "btnApply", "btnDefaults", "ap
 inPanel(lightsPanel, ["ledMode", "ledModeRaw", "ledBright", "ledBrightVal", "ledSymmetry",
   "ledDirection", "ledUser", "ledDpi", "btnApplyLeds", "ledApplyState", "ledBar"], "the lighting controls sit in Lighting");
 
+// en Linux el host nativo ofrece instalar la regla udev sin copiar nada a mano
+inPanel(debugPanel, ["linPerm", "linPermNode", "btnInstallRule", "linPermState"], "the udev-rule helper sits in Debug");
+check("el aviso de permisos sólo se pinta con el host nativo",
+  /__S700_API__/.test(app) && /\/permissions/.test(app) && /\/install-rule/.test(app) &&
+  /state\.needed/.test(app));
+
 // la pestaña Debug trae la sonda de bytes (para mirar campos que la UI no expone)
 inPanel(debugPanel, ["pokeAddr", "pokeVal", "btnPoke", "btnPokeClear", "pokeState"]);
 check("la sonda escribe en la imagen y no se guarda",

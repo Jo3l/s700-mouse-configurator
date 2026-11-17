@@ -66,9 +66,10 @@ jobs:
               your browser with the interface already loaded and talks to the mouse itself; there
               are no permissions to grant and no address to type (`--no-open` if you would rather
               open it yourself; it listens on <http://127.0.0.1:8760/>).
-            * `s700-host-linux-x86_64` — Linux x86_64: run it, same interface. Before the first
-              run, once, the kernel node permission:
-              `sudo cp 99-s700-hid.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger`
+            * `s700-host-linux-x86_64` — Linux x86_64: run it, same interface. If it cannot open
+              the mouse (the kernel node is root-only) the *Debug* tab offers **Install udev rule**,
+              or run `./s700-host-linux-x86_64 --install-rule`: your desktop asks for the password
+              once and everything afterwards runs as your normal user. No `cp`, no root server.
             * `S700-configurator.html` — one file, if you would rather not run anything: open it in
               Chrome/Edge/Brave and press *Connect mouse* (WebHID).
             * `99-s700-hid.rules` — the `/dev/hidraw*` permission rule for Linux.
