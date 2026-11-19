@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Elige cada efecto EN LA UI y captura el byte que la herramienta escribe.
+"""Pick each effect IN THE UI and capture the byte the tool writes.
 
-El ini no vale para esto: el desplegable muestra list[LED_TYPE], pero al pulsar
-Apply la herramienta escribe otro número. Aquí se abre el desplegable y se elige
-el elemento con un clic sostenido (el skin ignora el clic instantáneo de tap:
-necesita mousedown, pausa y mouseup con el ratón ya encima).
+The ini is useless here: the dropdown shows list[LED_TYPE], but on Apply the tool
+writes a different number. Here the dropdown is opened and the item picked with a
+held click (the skin ignores an instant tap: it needs mousedown, a pause and
+mouseup with the pointer already over the item).
 
-    led_names_ui.py 0 1 2 ...      índices del desplegable (0 = Breathing)
+    led_names_ui.py 0 1 2 ...      dropdown indices (0 = Breathing)
 """
 import json, os, subprocess, sys
 
@@ -16,9 +16,9 @@ from parse_log import parse, memory
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "led_names_ui.json")
-X = 780              # centro de la lista desplegada
-Y0 = 409             # primer elemento
-STEP = 26            # separación entre elementos
+X = 780              # centre of the open list
+Y0 = 409             # first item
+STEP = 26            # spacing between items
 
 
 def sh(*args):
@@ -32,11 +32,11 @@ def raw_xdotool(script):
 
 
 def pick(index):
-    exp.save(exp.load())            # siempre desde la misma base
+    exp.save(exp.load())            # always from the same base
     sh("start")
-    sh("tap", "530", "200")         # pestaña LED
+    sh("tap", "530", "200")         # LED tab
     sh("focus")
-    sh("tap", "780", "379")         # abrir el desplegable
+    sh("tap", "780", "379")         # open the dropdown
     subprocess.run(["sleep", "1"])
     y = Y0 + STEP * index
     raw_xdotool("xdotool mousemove %d %d; sleep 0.5; xdotool mousedown 1; sleep 0.3; xdotool mouseup 1" % (X, y))
@@ -56,7 +56,7 @@ def main(idxs):
     for i in idxs:
         raw = pick(i)
         out[i] = None if raw is None else raw >> 4
-        print("indice %-2d -> 0x1C=0x%s -> modo %s" % (i, "??" if raw is None else "%02x" % raw, out[i]), flush=True)
+        print("index %-2d -> 0x1C=0x%s -> mode %s" % (i, "??" if raw is None else "%02x" % raw, out[i]), flush=True)
         json.dump(out, open(OUT, "w"), indent=1)
 
 

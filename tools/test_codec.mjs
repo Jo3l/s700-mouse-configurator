@@ -24,7 +24,7 @@ check("every frame decodes", decoded.every(Boolean));
 const setFrames = frames.filter(([k]) => k === "SET").map(([, r]) => r);
 const i = setFrames.findIndex(r => g6.decode(r).cmd === g6.CMD.WRITE && g6.decode(r).addr === 0x0008);
 const block = g6.writeBlock(0x0008, Uint8Array.from([0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x35, 0x29]));
-// el log del fabricante va relleno a 65 bytes; la trama real son los 8 primeros
+// the vendor log is padded to 65 bytes; the real frame is the first 8
 check("writeBlock reproduces vendor frames",
   block.every((f, k) => f.length === 8 && f.every((b, j) => b === setFrames[i + k][j])));
 

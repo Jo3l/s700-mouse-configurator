@@ -44,13 +44,14 @@ everything byte for byte against what the vendor tool writes.
 
 | | |
 |---|---|
-| **Buttons** | all 10 (left, right, wheel, side, wheel tilt, DPI button) → 20 actions: mouse button, key, media key, macro, DPI loop, LED loop, autofire, shortcuts |
+| **Buttons** | all 10 (left, right, wheel, side, wheel tilt, DPI button) → 20 actions: mouse button, key, media key, macro, DPI loop, LED loop, autofire, shortcuts. A key can **hold while pressed** (default), tap once or tap while held — up to 4 held keys, the same limit as the vendor tool |
 | **DPI** | 6 stages, up to 6 different LED colours, one per stage |
 | **Lighting** | the vendor tool's **14 effects**, each with the controls it really shows (speed, brightness, 7 colours + cycle ticks, symmetry, up to 4 directions), 6 per-stage colours (independent of the effect), and **one animation per button** for *Button response* |
-| **Macros** | name + steps (key and delay), up to 16 steps in memory, assignable to a button |
+| **Macros** | name + steps (key, mouse button, XY move, DPI, delay), repeat modes (until release/click, N times), up to 21 steps, assignable to a button — they share the mouse's 192 B flow block with the keys, and the tab shows how much of it is in use |
 | **Profiles** | 4 button profiles, active one switchable from a button |
 | **Backup** | export/import the whole configuration as JSON; the factory image ships with the tool |
 | **Saving** | every change is saved in the browser; the mouse only changes when you press **Apply** |
+| **Debug** | device and udev rule, byte probe, memory image and hex dump, the HID traffic, the three key modes and a probe that writes four key shapes to four buttons in one Apply |
 
 ![Lighting tab: effects, brightness and the 13 colours](docs/img/lighting.png)
 
@@ -61,7 +62,7 @@ The interface is **identical** in all three; no code is duplicated.
 | | Permissions | What you need | Size |
 |---|---|---|---|
 | **Web page** (`make serve` + Chrome) | WebHID permission per origin + udev rule on Linux | a Chromium browser | 0 |
-| **Single HTML file** (`make build`) | same (it opens as `file://`) | a Chromium browser | ~520 KB |
+| **Single HTML file** (`make build`) | same (it opens as `file://`) | a Chromium browser | ~580 KB |
 | **Native host** (`make native`) | **nothing on Windows**; udev rule on Linux | Windows: nothing (WebView2 ships with Edge). Linux: `libwebkit2gtk-4.1-0`, `libgtk-3-0` | ~1.3 MB |
 | **AppImage** (`make appimage`) | udev rule on Linux | nothing but a desktop (GL and fonts, which every one has) | ~80 MB |
 
@@ -72,6 +73,21 @@ you already have — no tabs, no address bar — and closing the window stops th
 (`--browser` opens it as a normal tab instead). Windows is where it pays off most — there is
 nothing to grant.
 
+### Two skins over the same UI
+
+`make build` writes **two** single-file pages from the same code:
+
+| file | look |
+|---|---|
+| `dist/S700-configurator.html` | the plain console: five tabs, neutral colours |
+| `dist/S700-configurator-eva.html` | **ORIEL** tactical skin: one single page (no tabs — a kanji rail jumps between five chapters), fixed telemetry frame (state tag, link, clock, arena use), phosphor green on black with Unit-01 purple and alarm red, **a 3D wireframe background** (hex floor + rippling barrier wall + wire core, hand-written WebGL with a 2D lattice fallback), panels on 1px rules with corner ticks, hazard bars, a **red chapter** for macros (marquee, alarm accents, snap-cut reveal), the reference's **own `#alert` section** floating full-width and centred as the save/apply notice — kept to about half a screen (marquee band untouched, everything below it on one line) with **the eight regions of the image lighting up one after another** while the write runs; the classic write bar is dropped here, the buttons list built as the reference's **rib layout** (one rib per mouse button — number plate, name, function select and address on a central orange spine, photo and ribs side by side), and a **custom select** (the native one stays hidden as the source of truth) with the value in the component's orange, a boxed control and a plain list panel grouped by `<optgroup>` |
+
+They share `web/app.js`, the protocol and every id, so a feature works in both or in
+neither; `make build-eva` builds only the second and `make test` gates both
+(`tools/test_ui_eva.mjs` checks that the new page offers every control app.js asks for).
+The skin keeps the reference's type stacks with system fallbacks and draws its background
+lattice on a 2D canvas, so the single file still works with no network and no CDN.
+
 ## Quick start
 
 ### Windows
@@ -80,7 +96,7 @@ nothing to grant.
 s700-host.exe            # double click: opens its own window with the UI loaded
 ```
 
-or grab `dist/S700-configurador.html`, double-click it in Chrome/Edge/Brave and press
+or grab `dist/S700-configurator.html`, double-click it in Chrome/Edge/Brave and press
 **Connect mouse**. Close the vendor tool and its tray helper first: they hold the
 device exclusively.
 
@@ -105,7 +121,7 @@ as root. A udev rule scoped to one VID:PID is a much smaller door.
 ### Browser only
 
 ```bash
-make build       # builds dist/S700-configurador.html
+make build       # builds dist/S700-configurator.html
 make serve       # or serve the modular version at http://localhost:8099/web/
 ```
 
@@ -151,6 +167,17 @@ byte probe is the way to check the rest (`docs/PROTOCOL.md` §5-quater).
 real HID traffic by running the vendor tool under Wine with a DLL that impersonates
 `HID/SetupAPI`. The whole harness is in `tools/`.
 
+**Can a button hold a key?** Yes, and it is the default for a key on a button: press the
+button and the key stays down — with the system's auto-repeat, like a real key — release it and
+the key comes up. It is the vendor tool's own shape (`0x2E` + twenty `81 <key>` words); the
+configurator moves the macro library out of the way first, which is what used to make it a 1 ms
+tap (`docs/PROTOCOL.md` §5-ter). *Debug → Keyboard keys → on press* switches a key to
+*tap once* or *tap while held*.
+
+**How many keys can I put on the buttons?** Four if they hold (42 B each in the 192 B block,
+the vendor's own limit), all ten if they only tap, eight if they tap while held. Anything that does
+not fit is left untouched and the buttons table says so.
+
 **Does it need internet?** No. None of the three ways leaves your machine.
 
 ## Documentation
@@ -170,10 +197,10 @@ real HID traffic by running the vendor tool under Wine with a DLL that impersona
 | Action table (1–20) | verified |
 | DPI (nibble packing) | verified; real DPI values still unconfirmed |
 | LED | **decoded**: the 14 effects of the vendor list (id in `0x1C`, second group in `0x33` bit 7, *Button response*/*Mute* in the cycle nibble), the options each one writes (speed `0x1C`, brightness `0x3F`, 7 colours + mask `0x1D`/`0x20–0x31`, symmetry and 4 directions in `0x3A`), 4-bit channels with an **inverted level**, and the **per-button animation** in bits 7–6 of each button's action byte. Seen on hardware: the factory ids only; whether symmetry/direction change the animation is still **unconfirmed** |
-| Macro timing and records | partially verified |
+| Macros and keys | **verified on the mouse**: the macro area (`0x400` arena + macro library, which has to be lifted to `0x4C0` first), the slot record, the flow formats, the three key modes (a key on a button **holds** while the button is pressed) and the 21-step editor |
 | Reading (`GetFeature`) | tried on hardware, it does not return the protocol: the base is the factory image |
 | Report size (64 data bytes) | confirmed on the real mouse |
-| Writing | always the **whole image** (108 blocks), like the vendor; writing only the touched blocks makes the mouse drop the change |
+| Writing | always the **whole image** (132 blocks), like the vendor; writing only the touched blocks makes the mouse drop the change |
 | Native host | Linux built and tested up to the write (blocked by node permissions); the Windows `.exe` builds but is **untested on Windows** |
 | Python CLI | works against backups; not yet tried on the real mouse |
 
@@ -191,6 +218,11 @@ The vendor tool uploads the configuration in 8-byte blocks and uses **only**
 `HidD_SetFeature`/`HidD_GetFeature`. Full detail in
 [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
+The image also carries the **macro area** (`0x400–0x567`): 192 B of flows for the buttons and,
+right above them, the vendor's macro library. The library has to be moved up to `0x4C0` before a
+button flow is written there — the factory image keeps it in `0x400`, and that collision is what
+used to turn a held key into a 1 ms tap (`docs/PROTOCOL.md` §5-ter).
+
 ## Backup CLI
 
 ```bash
@@ -207,9 +239,10 @@ python tools/g6cli.py restore my-mouse.json
 
 ```bash
 make serve     # http://localhost:8099/web/index.html
-make build     # dist/S700-configurador.html (single file, for file://)
+make build     # dist/S700-configurator.html + dist/S700-configurator-eva.html
+make build-eva # only the EVA-01 skin
 make native    # native/target/release/s700-host
-make test      # 178 assertions
+make test      # 309 assertions
 ```
 
 The tests replay bytes captured from the vendor tool (`tools/probe/baseline.log`), so
@@ -219,7 +252,7 @@ working on the UI without hardware.
 ## Layout
 
 ```
-dist/                S700-configurador.html — one file, double click
+dist/                S700-configurator.html — one file, double click
 docs/PROTOCOL.md     protocol and memory map
 docs/NATIVE.md       native host: design, permissions, build
 web/                 WebHID configurator (g6.js protocol, core.js logic, app.js UI)

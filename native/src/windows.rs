@@ -1,9 +1,9 @@
-//! Windows: hid.dll para el feature report y cfgmgr32 para listar las
-//! interfaces HID. Sin diálogo de permisos: aquí no hay nada que conceder, el
-//! proceso abre el dispositivo como cualquier otro fichero.
+//! Windows: hid.dll for the feature report and cfgmgr32 to list the HID
+//! interfaces. No permission dialog: there is nothing to grant here, the
+//! process opens the device like any other file.
 //!
-//! ESCRIBIDO PERO **NO COMPILADO NI PROBADO** en esta máquina (Linux). La
-//! compilación cruzada necesita el target de Windows; ver docs/NATIVE.md.
+//! WRITTEN BUT **NOT COMPILED OR TESTED** on this machine (Linux). Cross
+//! compilation needs the Windows target; see docs/NATIVE.md.
 
 use std::ffi::c_void;
 use std::io;
@@ -86,7 +86,7 @@ pub struct Info {
     pub pid: u16,
 }
 
-#[allow(dead_code)] // vid/pid/name se usan en --list y en el JSON de /api/open
+#[allow(dead_code)] // vid/pid/name are used in --list and in the /api/open JSON
 pub struct Device {
     handle: HANDLE,
     pub path: String,
@@ -95,9 +95,9 @@ pub struct Device {
     pub pid: u16,
 }
 
-// El HANDLE de Windows no tiene afinidad de hilo y aquí quien serializa el
-// acceso es el Mutex del host, así que se puede mover entre hilos. Sin esto el
-// crate no compila para Windows (Arc<Host> deja de ser Send).
+// The Windows HANDLE has no thread affinity and here the host Mutex is what
+// serializes access, so it can move between threads. Without this the crate
+// does not compile for Windows (Arc<Host> stops being Send).
 unsafe impl Send for Device {}
 unsafe impl Sync for Device {}
 
@@ -131,7 +131,7 @@ fn interface_paths() -> Vec<String> {
     for i in 0..buf.len() {
         if buf[i] == 0 {
             if i == start {
-                break; // doble nulo: fin de la lista
+                break; // double null: end of the list
             }
             out.push(String::from_utf16_lossy(&buf[start..i]));
             start = i + 1;
@@ -160,8 +160,8 @@ fn open_handle(path: &str) -> Option<HANDLE> {
     }
 }
 
-/// HIDP_CAPS es mayor que 64 bytes en x64; se reserva de sobra y se lee
-/// UsagePage, que es el segundo u16 (offset 2).
+/// HIDP_CAPS is larger than 64 bytes on x64; plenty is reserved and
+/// UsagePage is read, which is the second u16 (offset 2).
 fn usage_page(h: HANDLE) -> Option<u16> {
     let mut preparsed: *mut c_void = ptr::null_mut();
     if unsafe { HidD_GetPreparsedData(h, &mut preparsed) } == 0 || preparsed.is_null() {
@@ -216,7 +216,7 @@ pub fn open(path: &str) -> io::Result<Device> {
     let handle = open_handle(path).ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::PermissionDenied,
-            format!("{path}: no se pudo abrir. Cierra la herramienta del fabricante y su bandeja: mantienen el dispositivo abierto en exclusiva."),
+            format!("{path}: could not open. Close the vendor tool and its tray icon: they hold the device open exclusively."),
         )
     })?;
     let info = describe(handle, path);

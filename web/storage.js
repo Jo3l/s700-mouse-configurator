@@ -1,10 +1,11 @@
-// Persistencia en el navegador: la última configuración y, a futuro, la colección
-// de macros. No toca el ratón; sirve para no perder el trabajo entre recargas y
-// para volver a escribir una configuración conocida sin reconstruirla a mano.
+// Persistence in the browser: the last configuration and, in the future, the
+// macro collection. It does not touch the mouse; it keeps work from being lost
+// between reloads and lets a known configuration be written again without
+// rebuilding it by hand.
 //
-// Nada de esto es la fuente de verdad del ratón (no se puede leer: ver
-// docs/PROTOCOL.md §4). La base siempre es la imagen de fábrica del programa del
-// fabricante (web/default_image.js); lo guardado aquí es lo que tú has decidido.
+// None of this is the mouse source of truth (it cannot be read: see
+// docs/PROTOCOL.md §4). The base is always the factory image from the vendor
+// program (web/default_image.js); what is stored here is what you decided.
 
 const NS = "s700";
 const K_CONFIG = NS + ".config.v1";
@@ -22,8 +23,8 @@ function fromHex(hex) {
   return out;
 }
 
-// localStorage puede no existir (file:// en algunos navegadores, modo privado
-// antiguo) o lanzar al escribir sin cuota: en ese caso todo esto es un no-op.
+// localStorage may not exist (file:// in some browsers, old private mode) or
+// throw when writing without quota: in that case all of this is a no-op.
 function store() {
   try {
     const s = window.localStorage;
@@ -38,7 +39,7 @@ function store() {
 
 export const available = () => !!store();
 
-// ------------------------------------------------------------- configuración
+// ------------------------------------------------------------- configuration
 export function saveConfig(mem, source = "manual") {
   const s = store();
   if (!s) return null;
@@ -82,11 +83,11 @@ export function clearConfig() {
   }
 }
 
-// --------------------------------------------------------- espacio de trabajo
-// Lo que estás editando: la imagen base (guardada, importada o de fábrica) más
-// los cambios que aún no se han enviado al ratón. Va aparte de K_CONFIG para que
-// «Revert to saved» tenga a dónde volver: K_CONFIG es lo último que se escribió
-// en el ratón (o se importó) y no se pisa al editar.
+// ------------------------------------------------------------------ workspace
+// What you are editing: the base image (saved, imported or factory) plus the
+// changes not yet sent to the mouse. It lives apart from K_CONFIG so that
+// «Revert to saved» has somewhere to go back to: K_CONFIG is the last thing
+// written to the mouse (or imported) and is not overwritten while editing.
 export function saveWorkspace(mem, edits, source = "edited") {
   const s = store();
   if (!s) return null;
@@ -136,8 +137,8 @@ export function clearWorkspace() {
 }
 
 // ------------------------------------------------------------------- macros
-// Formato previsto, todavía sin interfaz: [{ id, name, steps: [{ usage, delay, ... }] }]
-// Se guarda como JSON tal cual para no cerrar el formato antes de implementarlo.
+// Planned format, no UI yet: [{ id, name, steps: [{ usage, delay, ... }] }]
+// Stored as JSON as-is so the format is not locked in before it is implemented.
 export function loadMacros() {
   const s = store();
   if (!s) return [];
@@ -160,7 +161,7 @@ export function saveMacros(list) {
   }
 }
 
-// Resumen para la interfaz: qué hay guardado y desde cuándo.
+// Summary for the UI: what is stored and since when.
 export function describe() {
   const cfg = loadConfig();
   const work = loadWorkspace();

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Captura, por cada efecto del desplegable del fabricante, el panel de opciones
-que muestra la UI y la imagen completa que escribe en el raton.
+"""Capture, for each effect in the vendor dropdown, the options panel the UI
+shows and the full image it writes to the mouse.
 
-Una sola sesion: se elige el efecto con clic sostenido, foto, Apply, foto y se
-copia el config.ini que deje la herramienta. El log de HID se parte luego por
-los marcadores END (cmd 0x10) para tener una imagen por Apply.
+One session: pick the effect with a held click, shot, Apply, shot, and copy the
+config.ini the tool leaves behind. The HID log is later split on the END markers
+(cmd 0x10) to get one image per Apply.
 """
 import os, subprocess, sys, time
 
@@ -51,7 +51,7 @@ def main(idxs):
         time.sleep(2.5)
         sh("shot", "post_%02d" % i)
         cp_ini("%02d" % i)
-        print("efecto %02d: foto + apply + ini" % i, flush=True)
+        print("effect %02d: shot + apply + ini" % i, flush=True)
     sh("save", "effects")
     sh("stop")
 

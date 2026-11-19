@@ -10,7 +10,7 @@ tools/probe/): every frame below appears verbatim in tools/probe/baseline.log.
 
 REPORT_ID = 0x07
 MAGIC = 0x18              # second byte of every frame
-PACKET_LEN = 8            # report id + 7 data bytes (el descriptor declara 56 bits)
+PACKET_LEN = 8            # report id + 7 data bytes (the descriptor declares 56 bits)
 
 CMD_END = 0x00            # close transaction / no-op
 CMD_WRITE = 0x03          # stage one data byte

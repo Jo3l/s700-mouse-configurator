@@ -20,7 +20,7 @@ header {
 header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .2px; }
 header .spacer { flex: 1; }
 #status { font-size: 12px; color: var(--dim); }
-/* pestañas: segunda fila del header, subrayado sobre el borde inferior */
+/* tabs: second row of the header, underline over the bottom border */
 .tabs {
   order: 2; flex-basis: 100%; display: flex; gap: 22px; margin-top: 8px;
   border-top: 1px solid var(--line); margin-left: -20px; margin-right: -20px; padding-left: 20px;
@@ -42,7 +42,7 @@ section > h2 {
   letter-spacing: .8px; color: var(--dim); background: var(--panel2); border-bottom: 1px solid var(--line);
 }
 section > div.body { padding: 14px 16px; }
-/* pie de una sección: barra de progreso + acciones (Apply, defaults) */
+/* footer of a section: progress bar + actions (Apply, defaults) */
 section > div.body.footer { border-top: 1px solid var(--line); background: var(--panel2); padding-top: 12px; }
 section > div.body.footer .hint { margin-top: 10px; }
 button {
@@ -79,7 +79,7 @@ pre#log {
   font-family: ui-monospace, Menlo, monospace;
 }
 .hint { color: var(--dim); font-size: 12.5px; line-height: 1.5; }
-/* aviso de la pestaña, fuera de las secciones */
+/* notice for the tab, outside the sections */
 #intro { margin: 0 2px; }
 .warn { color: var(--warn); }
 .err { color: var(--err); }
@@ -88,7 +88,7 @@ pre#log {
 .bar > i { display: block; height: 100%; width: 0; background: var(--acc); transition: width .15s; }
 .bar.on { display: block; margin-bottom: 10px; }
 
-/* --- diagrama de botones --- */
+/* --- button diagram --- */
 .buttons-layout { display: grid; grid-template-columns: minmax(190px, 260px) 1fr; gap: 22px; align-items: start; }
 @media (max-width: 720px) { .buttons-layout { grid-template-columns: 1fr; } }
 
@@ -100,9 +100,9 @@ pre#log {
   border: 0; border-radius: 50%; background: none; cursor: pointer;
   transition: transform .12s;
 }
-/* Nada de opacity en el botón: el número tiene que leerse siempre. Sobre el
-   amarillo del ratón el relleno va casi opaco y el azul se apaga un poco hasta
-   el hover, que es cuando se empareja con su fila. */
+/* No opacity on the button: the number has to be readable at all times. Over
+   the mouse yellow the fill goes almost opaque and the blue dims a little
+   until hover, which is when it pairs with its row. */
 .diagram .hot .num-badge {
   background: rgba(16, 18, 22, .92); box-shadow: 0 1px 3px rgba(0, 0, 0, .55);
 }
@@ -115,50 +115,50 @@ pre#log {
   border-color: var(--ok); color: var(--ok); background: rgba(24, 74, 48, .96);
 }
 .buttons-table tr.on { background: rgba(78, 161, 255, .1); }
-/* en anchos medios la columna de la tabla es más estrecha que el ancho natural
-   del select (+ sus 190px de min-width global): sin esto, la sección lo recorta
-   y la columna Address desaparece */
+/* at medium widths the table column is narrower than the select natural
+   width (+ its global 190px min-width): without this, the section clips it
+   and the Address column disappears */
 .buttons-table { min-width: 0; }
-/* el select ocupa su celda y es el único que cede ancho: el resto no parte */
+/* the select fills its cell and is the only one giving up width: the rest does not wrap */
 .buttons-table th, .buttons-table td { white-space: nowrap; }
 .buttons-table td.fn { white-space: normal; }
 .buttons-table select { min-width: 0; width: 100%; }
 td.num { width: 30px; }
-/* el círculo con el número: el mismo en la tabla y sobre el diagrama */
+/* the circle with the number: the same in the table and over the diagram */
 .num-badge {
   display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center;
   border-radius: 50%; border: 1px solid var(--acc); color: var(--acc); font-size: 12px;
   font-variant-numeric: tabular-nums; line-height: 1;
 }
 tr.hasmedia .num-badge, .diagram .hot.media .num-badge { border-color: var(--ok); color: var(--ok); }
-/* -------------------------------------------------------------- luces */
+/* ------------------------------------------------------------- lights */
 .ch { display: flex; align-items: center; gap: 6px; }
 .ch i { font-style: normal; font-size: 12px; color: var(--dim); }
 .ch input[type="range"] { width: 190px; accent-color: var(--acc); }
 .ch input[type="checkbox"] { accent-color: var(--acc); }
 input[type="range"] { accent-color: var(--acc); }
-/* opciones del efecto: el fabricante muestra unas u otras según cuál elijas */
+/* effect options: the vendor shows some or others depending on which you pick */
 .led-opt { display: inline-flex; align-items: center; gap: 8px; margin-right: 18px; }
 .led-opt[hidden], .led-dirs .ch[hidden] { display: none; }
 .led-opt > .mono { color: var(--dim); }
 .led-opt input[type="range"] { width: 150px; }
 .led-num { min-width: 16px; text-align: right; font-variant-numeric: tabular-nums; color: var(--fg); }
 .led-dirs { display: inline-flex; gap: 14px; flex-wrap: wrap; }
-/* una fila por botón en "button response" */
+/* one row per button in "button response" */
 .led-react { display: grid; gap: 6px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 6px; }
 .led-react .led-row { grid-template-columns: 1fr 190px; }
 
-/* un modo que el firmware no conoce (id fuera de 8–15) */
+/* a mode the firmware does not know (id outside 8–15) */
 #ledMode.unknown { border-color: #b6802a; color: #e0b060; }
 
-/* dos columnas cuando hay sitio: son 13 filas y cada una es corta */
+/* two columns when there is room: 13 rows and each one is short */
 .led-colours { display: grid; gap: 6px; grid-template-columns: repeat(auto-fit, minmax(390px, 1fr)); }
 .led-row {
   display: grid; grid-template-columns: 46px 74px 1fr auto;
   align-items: center; gap: 12px; padding: 6px 10px;
   background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
 }
-/* el selector nativo, sin el marco del navegador: sólo el color */
+/* the native picker, without the browser frame: only the colour */
 .led-row input[type="color"] {
   width: 44px; height: 26px; padding: 0; border: 1px solid var(--line);
   border-radius: 6px; background: none; cursor: pointer;
@@ -174,10 +174,10 @@ input[type="range"] { accent-color: var(--acc); }
   content: "stored"; color: var(--dim); margin-right: 6px; letter-spacing: 0;
 }
 @media (max-width: 720px) {
-  /* una sola columna: los 390px del grid no caben en un móvil */
+  /* a single column: the grid 390px do not fit on a phone */
   .led-colours, .led-react { grid-template-columns: 1fr; }
   .led-row, .led-react .led-row { grid-template-columns: 40px 1fr auto; row-gap: 6px; }
-  .led-val::before { content: none; }     /* el prefijo "stored" no cabe */
+  .led-val::before { content: none; }     /* the "stored" prefix does not fit */
 }
 
 /* ---------------------------------------------------------------- macros */
@@ -201,6 +201,15 @@ input[type="range"] { accent-color: var(--acc); }
 }
 .macro-head input:focus { outline: none; border-color: var(--acc); }
 .macro-head .ghost { margin-left: auto; }
+.macro-repeat {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+  margin-top: 8px; font-size: 12px; color: var(--dim);
+}
+.macro-repeat label { display: inline-flex; align-items: center; gap: 5px; }
+.macro-repeat input[type="number"] {
+  width: 64px; background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 6px; padding: 5px 6px; font-size: 12px;
+}
 .macro-steps { display: grid; gap: 6px; margin-top: 10px; }
 .macro-step {
   display: flex; align-items: center; gap: 8px; padding: 6px 8px;
@@ -213,6 +222,14 @@ input[type="range"] { accent-color: var(--acc); }
   width: 64px; background: var(--panel); color: var(--fg); border: 1px solid var(--line);
   border-radius: 6px; padding: 5px 6px; font-size: 12px;
 }
+.macro-step select {
+  background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 6px; padding: 5px 6px; font-size: 12px;
+}
+.macro-step .kind { width: 78px; }
+.macro-step .grow { flex: 1; min-width: 80px; }
+.macro-step .tiny { width: 54px; }
+.macro-step .chk { font-size: 11px; color: var(--dim); display: inline-flex; gap: 4px; align-items: center; }
 .macro-step .move { padding: 3px 7px; font-size: 11px; line-height: 1; }
 .macro-step .drop { margin-left: auto; padding: 3px 8px; font-size: 12px; line-height: 1; }
 pre#macroBytes {

@@ -1,7 +1,7 @@
-// Enchufe del host nativo (native/): deja que la misma UI hable con el HID del
-// proceso en vez de con navigator.hid. En un navegador WebHID pide permiso por
-// origen; aquí no hay diálogo porque el proceso ya es dueño del dispositivo.
-// Sin window.__S700_API__ (navegador normal) este fichero no hace nada.
+// Native host shim (native/): lets the same UI talk to the process HID instead
+// of navigator.hid. In a browser WebHID asks for permission per origin; here
+// there is no dialog because the process already owns the device.
+// Without window.__S700_API__ (normal browser) this file does nothing.
 (() => {
   const api = window.__S700_API__;
   if (!api || typeof fetch !== "function") return;
@@ -26,8 +26,8 @@
     },
   };
 
-  // El descriptor real no hace falta: el host ya filtra las interfaces que
-  // declaran el vendor page 0xFF00, y reportBytes() se queda en 64 B sin items.
+  // The real descriptor is not needed: the host already filters the interfaces
+  // that declare vendor page 0xFF00, and reportBytes() stays at 64 B with no items.
   const VENDOR = [{ usagePage: 0xff00, usage: 1, inputReports: [], outputReports: [], featureReports: [{ reportId: 7 }] }];
 
   class Device extends EventTarget {
@@ -64,15 +64,15 @@
     ondisconnect: null,
     addEventListener() {},
     removeEventListener() {},
-    // Aquí no hay concesiones que recordar: si el host ve el ratón, se puede
-    // usar, así que la página se conecta sola al cargar.
+    // There are no grants to remember here: if the host sees the mouse, it can
+    // be used, so the page connects on its own when it loads.
     async getDevices() {
       const out = await host.get("/devices").catch(() => ({ devices: [] }));
       return (out.devices || []).map(d => new Device(d));
     },
     async requestDevice() {
-      // Sin diálogo de permisos: el host devuelve lo que ha enumerado y app.js
-      // ordena y abre la primera que responda.
+      // No permission dialog: the host returns what it enumerated and app.js
+      // sorts and opens the first one that answers.
       const out = await host.get("/devices");
       return (out.devices || []).map(d => new Device(d));
     },

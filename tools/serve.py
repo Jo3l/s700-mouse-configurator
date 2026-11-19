@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Sirve una carpeta por HTTP o HTTPS (WebHID exige contexto seguro).
+"""Serve a folder over HTTP or HTTPS (WebHID requires a secure context).
 
     python3 tools/serve.py 8099            # http://0.0.0.0:8099
-    python3 tools/serve.py 8443 --tls       # https con certificado autofirmado
+    python3 tools/serve.py 8443 --tls       # https with a self-signed certificate
 
-El certificado se genera la primera vez en certs/ e incluye la IP local en el SAN.
+The certificate is generated on first run in certs/ and includes the local IP in the SAN.
 """
 import argparse, http.server, os, socket, ssl, subprocess, sys
 
@@ -52,7 +52,7 @@ def main():
         ctx.load_cert_chain(crt, key)
         httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
         scheme = "https"
-    print(f"http://{local_ip()}:{args.port}/  ({scheme}, sirviendo {args.dir})", flush=True)
+    print(f"http://{local_ip()}:{args.port}/  ({scheme}, serving {args.dir})", flush=True)
     httpd.serve_forever()
 
 

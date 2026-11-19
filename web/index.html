@@ -41,7 +41,7 @@
 </header>
 
 <main>
-  <!-- ========================================================== configuración -->
+  <!-- ========================================================= configuration -->
   <div class="tabpanel" id="panelMain" role="tabpanel" aria-labelledby="tabMain">
     <p class="hint err" id="intro" hidden></p>
 
@@ -52,6 +52,7 @@
           <img src="./mouse.png" alt="Mouse seen from above; the numbers on the hover targets are the vendor tool's">
         </div>
         <div class="buttons-table">
+          <p class="hint warn" id="cfgWarn" hidden></p>
           <table>
             <thead><tr><th>#</th><th>Button</th><th>Function</th><th>Address</th></tr></thead>
             <tbody id="buttons"></tbody>
@@ -91,7 +92,7 @@
     </section>
   </div>
 
-  <!-- ============================================================== iluminación -->
+  <!-- ================================================================ lighting -->
   <div class="tabpanel" id="panelLights" role="tabpanel" aria-labelledby="tabLights" hidden>
     <section>
       <h2>Lighting</h2>
@@ -197,9 +198,24 @@
                      placeholder="copy / paste, open terminal…">
               <button id="btnMacroDelete" class="ghost">Delete</button>
             </div>
+            <div class="macro-repeat">
+              <label><input type="radio" name="macroRepeat" value="release"> Run until release</label>
+              <label><input type="radio" name="macroRepeat" value="click"> Run until click</label>
+              <label><input type="radio" name="macroRepeat" value="on"> Repeat on</label>
+              <input id="macroCount" type="number" min="1" max="999" value="1" title="How many times the macro runs">
+              <span class="mono hint">times</span>
+            </div>
+            <p class="hint" style="margin:2px 0 8px">
+              <b>Run until release</b> is the mode the held-key recipe uses: a one-step macro with
+              the key <i>down</i> holds while the button is pressed (measured on the mouse).
+              Multi-step flows, <b>Run until click</b> and <b>Repeat on N</b> are written exactly as
+              the vendor tool writes them, but their timing has not been watched on the mouse. The
+              mode lives inside the macro, not in the button's action byte
+              (<span class="mono">docs/PROTOCOL.md</span> §5-ter).
+            </p>
             <div class="macro-steps" id="macroSteps"></div>
             <div class="row" style="margin-top:10px">
-              <button id="btnMacroAddStep">Add key step</button>
+              <button id="btnMacroAddStep">Add step</button>
             </div>
             <pre class="mono" id="macroBytes"></pre>
           </div>
@@ -213,7 +229,8 @@
         <p class="hint" style="margin-bottom:0">
           To use a macro, pick it in the <b>Function</b> column of the Configuration tab — macro slots
           are only mapped in profile 1, like media and keyboard keys. Macros live in this browser and
-          reach the mouse with <b>Apply</b>.
+          reach the mouse with <b>Apply</b>, sharing the mouse's 192 B flow block with the keys: a
+          held key takes 42 B and a macro takes its own length, so they add up.
         </p>
       </div>
     </section>
@@ -230,7 +247,7 @@
           <input type="file" id="fileRestore" accept=".json" style="display:none">
         </div>
         <p class="hint" style="margin-bottom:0">
-          Export downloads the whole memory image as JSON (1280 bytes) — keep it to move the setup to
+          Export downloads the whole memory image as JSON (1384 bytes) — keep it to move the setup to
           another PC or to undo later. Import loads a file into the editor and saves it in this browser;
           it does not write to the mouse: review it and press <b>Apply</b> in the configuration tab.
         </p>
@@ -303,6 +320,42 @@
           (effect in the high nibble, cycle time in the low one), <span class="mono">0x3F</span>
           (brightness) or <span class="mono">0x3A</span> (the symmetry/direction bits) and watch the
           mouse. Probes are not part of the saved configuration and are dropped on reload.
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>Keyboard keys</h2>
+      <div class="body">
+        <div class="row">
+          <label class="mono" for="keyMode">on press</label>
+          <select id="keyMode">
+            <option value="hold">hold while pressed (run until release)</option>
+            <option value="tap">tap once</option>
+            <option value="repeat">tap while held</option>
+          </select>
+          <label class="mono" for="slotMode">slot mode</label>
+          <input id="slotMode" class="mono" size="4" value="04" />
+          <span class="mono hint" id="keyModeHint" style="margin-left:auto"></span>
+        </div>
+        <div class="row">
+          <button id="btnImageHex" class="ghost">Copy the image as hex</button>
+          <button id="btnLogCopy" class="ghost">Copy the sent frames</button>
+          <button id="btnKeyProbe" class="ghost">Probe the 4 key shapes on buttons 4–7 (G)</button>
+          <span class="mono hint" id="keyProbeHint"></span>
+        </div>
+        <p class="hint" style="margin-bottom:0">
+          <b>Hold</b> (the default) writes the vendor's own shape: twenty
+          <span class="mono">81 &lt;key&gt;</span> words with action
+          <span class="mono">0x2E</span>, no release inside, so the key goes down when you press
+          the button and comes up when you let go — confirmed on the mouse. It needs the macro
+          library out of the way first: the factory image keeps it in <span class="mono">0x400</span>,
+          the same block the button flows use, so every Apply moves it up to
+          <span class="mono">0x4C0</span> (<span class="mono">liftLibrary()</span>); otherwise the
+          firmware runs the library's flow and the key is a 1 ms tap. <b>Tap once</b> carries its
+          own release (<span class="mono">83 &lt;key&gt; &lt;delay&gt; &lt;key&gt; 00 00</span>) and
+          <b>tap while held</b> uses <span class="mono">81/01</span> pairs. Nothing is written
+          until <b>Apply</b>.
         </p>
       </div>
     </section>

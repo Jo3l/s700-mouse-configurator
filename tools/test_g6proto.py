@@ -48,7 +48,7 @@ def test_first_block_matches_capture():
     log = [r for k, r in frames(LOG) if k == "SET"]
     i = next(i for i, r in enumerate(log)
              if g6.decode(r) and g6.decode(r)["cmd"] == g6.CMD_WRITE and g6.decode(r)["addr"] == 0x0008)
-    # el log del fabricante va relleno a 65 bytes; la trama real son los 8 primeros
+    # the vendor log is padded to 65 bytes; the real frame is the first 8
     for k, fr in enumerate(got):
         assert len(fr) == 8
         assert bytes(log[i + k][:8]) == fr, "write_block does not match vendor traffic"

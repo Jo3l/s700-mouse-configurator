@@ -1,6 +1,6 @@
-//! hidraw: el nodo /dev/hidrawN, que es lo que el kernel expone para cada
-//! interfaz HID. Se escribe el feature report con ioctl(HIDIOCSFEATURE) y el
-//! primer byte del buffer es el report id, igual que en el navegador.
+//! hidraw: the /dev/hidrawN node, which is what the kernel exposes for each
+//! HID interface. The feature report is written with ioctl(HIDIOCSFEATURE) and
+//! the first byte of the buffer is the report id, same as in the browser.
 
 use std::fs::{self, File, OpenOptions};
 use std::io;
@@ -13,7 +13,7 @@ pub struct Info {
     pub pid: u16,
 }
 
-#[allow(dead_code)] // vid/pid/name se usan en --list y en el JSON de /api/open
+#[allow(dead_code)] // vid/pid/name are used in --list and in the /api/open JSON
 pub struct Device {
     file: File,
     pub path: String,
@@ -22,7 +22,7 @@ pub struct Device {
     pub pid: u16,
 }
 
-/// _IOWR('H', 0x06, len): HIDIOCSFEATURE. El tamaño viaja en los bits 16-29.
+/// _IOWR('H', 0x06, len): HIDIOCSFEATURE. The size travels in bits 16-29.
 fn hid_iocsfeature(len: usize) -> u64 {
     0xC000_0000u64 | ((len as u64) << 16) | 0x0648
 }
@@ -31,8 +31,8 @@ extern "C" {
     fn ioctl(fd: i32, request: u64, ...) -> i32;
 }
 
-/// Interfaces HID cuyo descriptor declara el vendor page 0xFF00: son las del
-/// ratón (la de configuración; la de ratón normal no lo declara).
+/// HID interfaces whose descriptor declares vendor page 0xFF00: those are the
+/// mouse ones (the configuration interface; the plain mouse one does not declare it).
 pub fn enumerate() -> Vec<Info> {
     let mut out = Vec::new();
     let entries = match fs::read_dir("/sys/class/hidraw") {
@@ -74,8 +74,8 @@ pub fn open(path: &str) -> io::Result<Device> {
             io::Error::new(
                 e.kind(),
                 format!(
-                    "{path}: permission denied. El nodo es de root y este usuario no lo puede abrir; \
-                     instala la regla udev de docs/NATIVE.md (§ Permisos) y reconecta el ratón."
+                    "{path}: permission denied. The node belongs to root and this user cannot open it; \
+                     install the udev rule from docs/NATIVE.md (§ Permissions) and reconnect the mouse."
                 ),
             )
         } else {
@@ -91,7 +91,7 @@ pub fn open(path: &str) -> io::Result<Device> {
 }
 
 impl Device {
-    /// Escribe un feature report. `data` va sin el report id: se antepone aquí.
+    /// Writes a feature report. `data` goes without the report id: it is prepended here.
     pub fn send_feature(&self, id: u8, data: &[u8]) -> io::Result<usize> {
         let mut buf = Vec::with_capacity(data.len() + 1);
         buf.push(id);

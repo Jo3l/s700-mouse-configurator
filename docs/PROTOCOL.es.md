@@ -31,7 +31,7 @@ producto «USB GAMING MOUSE»):
 | Colección de configuración | `UsagePage 0xFF01`, `Usage 0x01` |
 | Informe | *feature* **report ID 7, 7 bytes de datos** (8 con el ID) |
 | VID/PID que acepta el programa | `0x30FA` con `0x1540` o `0x1E01` (compara `HIDD_ATTRIBUTES` y una lista de nombres de producto) |
-| API usada | `HidD_SetFeature` / `HidD_GetFeature` en un handle `CreateFile(..., GENERIC_READ|GENERIC_WRITE)` |
+| API usada | `HidD_SetFeature` / `HidD_GetFeature` en un handle `CreateFile(..., GENERIC_READ\|GENERIC_WRITE)` |
 
 > **Ojo con el tamaño.** El programa del fabricante pasa un búfer de 65 bytes y la
 > pila HID lo recorta a 8 sin rechistar; WebHID (y `hidapi` en Windows) exigen el
@@ -129,7 +129,7 @@ subida).
 
 Escribir sólo los bloques que cambian **no surte efecto**: el ratón acepta los
 commits (no hay error) y sigue ejecutando la configuración anterior. Con la imagen
-completa — los 108 bloques de `WRITE_BLOCKS`, en el mismo orden que usa el
+completa — los 132 bloques de `WRITE_BLOCKS`, en el mismo orden que usa el
 fabricante, con la tabla de punteros de `0x006E` incluida — el cambio sí se aplica.
 El configurador manda siempre la imagen entera por eso.
 
@@ -146,14 +146,14 @@ El configurador manda siempre la imagen entera por eso.
 | `0x0044–0x004E` | botones del **perfil 1** |
 | `0x0050–0x005A` | botones del **perfil 2** |
 | `0x0060–0x006A` | botones del **perfil 3** |
-| `0x006E–0x007F` | tabla de punteros a registros + suma de comprobación (cambia con las acciones) |
-| `0x00A0–0x02CF` | registros de acciones avanzadas / macros (no descifrado) |
-| `0x0400–0x04A7` | más registros y bloque de flags |
+| `0x006E–0x007F` | punteros de «siguiente hueco» de la biblioteca de macros + suma de comprobación — se mueven con la biblioteca (§5-ter) |
+| `0x00A0–0x02CF` | las diez ranuras de botón (10 B cada una, §5-ter), los cinco registros compartidos de `0x14A`–`0x18F` y las copias de los punteros de la biblioteca dentro de los dos registros de multimedia (`0x0203`, `0x028F`) |
+| `0x0400–0x0567` | **área de macros**: `0x0400–0x04BF` arena de los flujos de los botones, `0x04C0–0x0567` biblioteca de macros (§5-ter) |
 | `0x0080–0x009F` | **no** se escribe con la configuración por defecto (¿perfiles sin usar?) |
 
 El programa **escribe siempre** `0x0001`, `0x006E` (2 bytes) y los 15 bloques de
-`0x0008` a `0x007F`, más `0x00A0–0x02CF` y `0x0400–0x04A7`. Nunca escribe
-`0x0080–0x009F` en el perfil 1.
+`0x0008` a `0x007F`, más `0x00A0–0x02CF` y `0x0400–0x0567`. Nunca escribe
+`0x0080–0x009F` en el perfil 1. El configurador escribe esos mismos 132 bloques en cada Apply.
 
 ### Botones (perfil 0 = el activo)
 
@@ -312,68 +312,139 @@ personalizadas de este grupo. Sus registros son:
 | 53 | `01 82 ff 00 00 80 04 00 8a` |
 | 259 | `01 88 ff 00 00 90 04 00 0a` |
 
-Los valores `0x89`, `0x8c`, `0x82`, `0x88`, `0x8a`, `0x84` encajan sospechosamente
-con **máscaras de modificadores HID** (`0x01` Ctrl, `0x02` Shift, `0x04` Alt,
-`0x08` Win, `0x80` «hay modificador»), así que los campos de tecla y modificador
-están ahí aunque todavía no sepamos en qué orden. Eso implica que **asignar Shift
-(o Ctrl+C) a un botón es representable**; falta confirmar el reparto exacto de
-campos y quién ejecuta la tecla.
+Esos valores `0x89`, `0x8c`, `0x82`, `0x88` se leyeron al principio como **máscaras de
+modificadores HID**; no lo son. Son el byte de tipo de §5-ter (el número de palabras del flujo,
+`0x80 | palabras`) y el `0x04xx` es la dirección absoluta del flujo, así que estos cinco registros
+son el mismo fondo compartido que usan las macros, y los ids 50–53/259 son entradas de la
+biblioteca del propio fabricante, no atajos.
 
-**Sin resolver:** de dónde salen exactamente la tecla y el modificador (la
-herramienta tiene un diálogo «Please enter the key»), cómo se reparten los
-registros cuando varios botones usan funciones avanzadas (la tabla de punteros de
-`0x006E` cambia de base: `0x0490`, `0x04a8`, `0x0460`…) y si el ratón ejecuta esas
-teclas él mismo.
+Las capturas de atajos de este grupo escriben `01 00` + cuatro pares (opcode, usage) en el registro
+de `0x186`: `Ctrl+C` → `ef ad 13 0a`, `Ctrl+A` → `cc a8 0e 0a`, `Win+E` → `dd be 03 0a`. Los opcodes
+cambian con el atajo y la regla que los genera no se ha encontrado, así que todavía no se puede
+sintetizar un atajo nuevo (§6).
 
-> Dato importante: el descriptor del ratón **no tiene colección de teclado**
-> (sólo ratón `0xFF00`, configuración `0xFF01` y consumidor `0x0C`), y el EXE del
-> fabricante no importa `SendInput` ni `keybd_event`. O las teclas de este grupo
-> las envía el firmware por un camino que no vemos, o dependen de que la
-> aplicación esté abierta. Se comprueba en 2 minutos: asignar `Copy` a un botón,
-> **cerrar del todo** la aplicación del fabricante y pulsar el botón en el
-> Bloc de notas.
+**Sin resolver:** cómo se reparten los registros cuando varios botones usan funciones avanzadas (la
+tabla de punteros de `0x006E` cambia de base: `0x0490`, `0x04a8`, `0x0460`…) y de dónde salen la
+tecla y el modificador de un atajo (la herramienta tiene un diálogo «Please enter the key»).
 
-## 5-ter. Macros: sí se guardan en el ratón
+> El descriptor del ratón **no tiene colección de teclado** (sólo ratón `0xFF00`, configuración
+> `0xFF01` y consumidor `0x0C`) y el EXE del fabricante no importa `SendInput`/`keybd_event`, pero
+> una tecla asignada a un botón **sí llega al sistema con la herramienta cerrada** — es lo que
+> demuestra el mantener de §5-ter. O sea: la envía el firmware, por la colección de vendor.
 
-Contra lo que parecía al principio, **el contenido de las macros se sube al ratón**
-en cada Apply: el bloque `0x0400–0x04A7` del volcado contiene el flujo de pasos, y
-coincide con lo que muestra el editor. `constMacro.dat` es sólo la copia del PC
-(8 macros), la fuente desde la que se rellena ese bloque.
+## 5-ter. Macros y teclas: el área de macros
 
-Asignando a mano (pestaña Macro → elegir macro → Insert → Apply) la macro
-«first aid» (tecla `8`, 10 ms, tecla `8`, 20 ms) al botón 10, el fabricante escribió:
+El contenido de las macros **sí se sube al ratón** en cada Apply: el bloque `0x0400` de la imagen
+lleva el flujo de pasos y coincide con lo que muestra el editor. `constMacro.dat` (§5-quinquies) es
+solo la biblioteca del PC desde la que la herramienta del fabricante llena ese bloque.
 
-| byte | valor | significado |
+### Diseño: 192 B de arena y después la biblioteca de macros
+
+| rango | contenido |
+|---|---|
+| `0x0400–0x04BF` | **arena**: flujos de los botones que llevan una tecla o una macro (192 B) |
+| `0x04C0–0x0567` | **biblioteca de macros**: los flujos que no son de ningún botón (168 B) |
+| `0x014A`, `0x0154`, `0x0168`, `0x0172`, `0x0186` | los cinco registros de la biblioteca, 10 B cada uno, con la misma forma que la ranura de un botón |
+| `0x006E` (×4), `0x0079`, `0x007B`, `0x0203`, `0x028F` | punteros de «siguiente hueco» de la biblioteca |
+
+La imagen de fábrica (`web/default_image.js`, reconstruida de `tools/probe/baseline.log`) tiene la
+biblioteca **en `0x0400`** —dentro de la arena— y todo lo que la direcciona va con ella. Esa es la
+trampa que costó dos sesiones: escribir una tecla en `0x0400` pisa la biblioteca mientras sus cinco
+registros siguen apuntando allí, así que el firmware resuelve el flujo del botón contra la
+biblioteca y ejecuta el equivocado. La herramienta del fabricante mueve biblioteca **y** registros
+`+0xC0` (`LIB_BASE 0x04C0 − STREAM_BASE 0x0400`) al asignar el primer flujo de un botón;
+`liftLibrary()` en `web/core.js` hace lo mismo al principio de cada `applyEdits` y es idempotente
+(si los registros ya están en `0x04C0` o más arriba, no toca nada). Una captura de una configuración
+que mantiene teclas tiene los registros en `0x04C0`/`0x04E0`/`0x0510`/`0x0540`/`0x0550` y los
+punteros en `0x0568`…`0x0588`.
+
+### El registro de ranura (10 bytes)
+
+| byte | significado |
+|---|---|
+| 0 | `0x01` |
+| 1 | tipo: **número de pasos** (Repeat On, hasta clic) o **`0x80 \| palabras`** (hasta soltar) |
+| 2 | `0xFF` |
+| 3–4 | parámetro: usage de consumidor en los registros de multimedia, `0x0000` en las macros |
+| 5–6 | **dirección del flujo, uint16 little-endian, absoluta** (`0x0400` + desplazamiento) |
+| 7 | `0x04`, igual en los tres modos de repetición |
+| 8–9 | longitud; `0x000A` en todos los registros que escribe el configurador |
+
+Las primeras builds del configurador ponían el desplazamiento en los bytes 3–4, así que el firmware
+leía `0` en todos los registros y **todos los botones ejecutaban el primer flujo** (cuatro botones
+con W, Shift, O e I escribían `W`); esas imágenes se siguen leyendo con un respaldo. Los bytes 5–6
+son una dirección absoluta, no «desplazamiento más un `0x04` fijo»: el `0x04` es el byte alto de
+`0x04xx`. Los registros de la biblioteca, que vive por encima de `0x0500`, llevan `0x0510`,
+`0x0540`, `0x0550`.
+
+### Formatos de flujo
+
+Un flujo empieza con un **contador de repeticiones uint16** (solo lo usa «Repeat On»; los otros
+modos escriben `1`) y sigue con elementos de longitud variable:
+
+| bytes | significado |
+|---|---|
+| `83 <usage> <delay> <usage> 00 00` | toque de tecla, 6 B, lleva su propio soltar (`85` aparece en el `first aid` del fabricante y se acepta al leer) |
+| `83 <usage>` / `82 <usage>` | tecla abajo / tecla arriba, 2 B cada uno |
+| `81 <code>` / `01 <code>` | botón del ratón abajo / arriba, `f1`/`f2`/`f3` = izquierdo/central/derecho |
+| `01 f6 <x16> <y16>` | mover, int16 con signo |
+| `81 f8 <dpi/200>` / `01 f8 <dpi/200>` | fijar / restaurar DPI |
+| `01 f9 <…>` | paso LED (carga útil sin descifrar, de solo lectura en el configurador) |
+| `00 <ms/2> 00` | retardo en unidades de 2 ms (`00 01 00` = 2 ms) |
+
+Las teclas son **usages HID** (`0x04` A, `0x14` Q, `0x1A` W, `0xE1` LShift). El `.dat` del
+fabricante guarda códigos de tecla virtuales de Windows y los convierte al subir el flujo
+(§5-quinquies).
+
+El byte de tipo **está descifrado**: el bit 7 marca la familia «hasta soltar» y los siete bits bajos
+son el número de palabras de 2 bytes del cuerpo del flujo —la longitud no se guarda en ningún otro
+sitio, y así sabe el firmware dónde termina—. Doce capturas lo confirman: 20 palabras
+`81 <usage>` → `0x94`, una macro de nueve toques (54 B) → `0x9b`, 13 pares abajo/arriba → `0x9a`. Un
+recuento declarado que no cuadre con el flujo hace que el firmware lo lea mal.
+
+### Las tres formas de poner una tecla en un botón — todas medidas en el ratón
+
+| modo en la UI | lo que se escribe | tamaño | comportamiento |
+|---|---|---|---|
+| **mantener al pulsar** (por defecto) | acción `0x2E`, ranura `01 94 ff 00 00 <addr> 04 00 0A 00`, flujo `01 00` + 20× `81 <usage>` | 42 B | **mantiene**: la tecla baja al apretar el botón —con el auto-repeat del sistema, como una tecla real— y sube al soltarlo |
+| **un toque** | acción `0x2D`, tipo `0x02`, flujo `01 00 83 <usage> <delay> <usage> 00 00` (la macro `map` del fabricante) | 8 B | un toque por pulsación; lleva su soltar dentro, así que no puede quedarse pegada |
+| **toques mientras se mantiene** | acción `0x2D`, tipo `0x80 \| 2·pares`, flujo `01 00` + pares `81 <usage> 01 <usage>` (captura `tap_q`) | 2 + 4·pares | toques mientras se mantiene el botón; cada par suelta antes del siguiente |
+
+El mantener es la forma del propio fabricante —veinte copias **y** `0x2E` es exactamente lo que
+llevan las capturas `kd_shift` y `kd_q`— y solo funciona con la biblioteca fuera de la arena (arriba).
+Capacidad dentro de los 192 B de arena, con la alineación de 8 bytes que espera el firmware:
+
+| modo | bytes por tecla | teclas que caben |
 |---|---|---|
-| `0x0E` (botón 10) | `0x2D` | **acción = macro** (multimedia era `0x2F`, básica `0x21–0x3A`) |
-| `0xDC` (su ranura) | `01 02 ff 00 00 00 04 00 0A 00` | tipo `02` = macro, byte 5 = desplazamiento en el bloque, bytes 3–4 = parámetro (0 en macros, el usage de consumidor en multimedia), `0A 00` = longitud |
-| `0x400` | `01 00 85 25 0A 25 00 00 01 00` | el flujo de la macro: 8 bytes, más el `01 00` que encabeza el registro siguiente |
+| mantener | 42 | **4** |
+| un toque | 8 | 24 (el ratón solo tiene 10 botones, así que todos) |
+| toques mientras se mantiene | 2 + 4·pares (18 con 4 pares, alineado a 24) | 8 |
 
-Dentro del flujo aparecen **usages HID de teclado**: `0x25` es la tecla `8` (`0x1E`
-= `1`, `0x1F` = `2`… `0x26` = `9`), que es exactamente la tecla de esa macro. O sea
-que el ratón guarda las teclas como usages HID, y un botón puede ejecutarlas sin la
-aplicación del fabricante.
+Las macros comparten esa arena con las teclas, así que el límite son bytes y no pasos: una macro
+ocupa `2 B + sus pasos` (alineado a 8), o sea que una macro de 21 toques son 128 B y dejan sitio
+para una sola tecla mantenida (42 B). Un flujo que no cabe no se escribe: el botón conserva su
+acción anterior y la tabla avisa con `No room for button N…`; la pestaña Macros dice cuánto de los
+192 B hay en uso.
 
-**El desplazamiento va en el byte 5, no en los bytes 3–4.** El registro de la ranura es
-`01 <tipo> ff <param_lo> <param_hi> <desplazamiento> 04 00 <len_lo> <len_hi>`: los bytes
-que llevan datos son el 3–4 y guardan el *parámetro* de la acción (un usage de consumidor
-en los registros de multimedia, p. ej. `01 00 ff 23 02 b0 04 00 0A 00` para Browser =
-`0x0223`), mientras que el desplazamiento dentro de `0x400` es el byte 5, un solo byte. Lo
-confirman dos capturas: la segunda macro del fabricante deja `01 00 ff 00 00 08 04 00 00
-00` — desplazamiento `8` para la segunda y `0` para la primera — y al insertar una macro
-los seis punteros de `0x006E` suben `8`, o sea que **cada macro asignada ocupa 8 bytes al
-principio del bloque** y el resto se desplaza. Con dos asignadas sube `0x10`; en ese caso
-reserva el hueco y no escribe ningún paso (esas macros viven en el PC, no en el ratón).
+### El byte de acción dice QUÉ lanza, no CÓMO se repite
 
-El configurador escribía el desplazamiento en los bytes 3–4 hasta encontrar esto, así que
-el firmware leía `0` en todos los registros y **todos los botones ejecutaban el primer
-flujo**: cuatro botones con W, Shift, O e I escribían `W`. `web/g6.js` y `web/core.js`
-escriben y leen ya el byte 5 (las imágenes antiguas se siguen leyendo por el respaldo de
-3–4).
+`0x2D` es la macro **inline** (el camino de `Convert K1 to a macro` del fabricante, dentro del
+bloque del propio botón) y `0x2E` la macro de la **biblioteca**; el desensamblado tiene exactamente
+dos sitios que las escriben (`0x534797` → `0x2E`, y `0x53478E` → `0x2F` para multimedia). Asignar la
+misma macro `mirror` con los modos `01` y `02` escribió acción y ranura idénticas
+(`01 82 ff 00 00 10 04 00 0A 00`), y con el modo `00` escribió `0x2D`: la diferencia es el camino de
+asignación (biblioteca o inline), no el modo. El byte 7 de la ranura tampoco cambia con el modo —el
+`0x84` que las notas anteriores leían como «Run until click» es el byte 8 del registro—. Dónde vive
+el modo dentro de la macro sigue abierto: es `0x3C` en el `.dat` y la copia en el ratón de esa
+cabecera no se ha localizado.
 
-El editor de macros admite además pasos de tipo XY (movimiento), CPI (cambio de
-DPI), LED y retardos, y opciones de repetición («Run Until release», «Run Until
-Click», «Repeat On = N»).
+Las macros de varios pasos son el mismo registro de arena. El fabricante mueve su propio contenido
+de la arena exactamente 8 bytes por macro insertada, así que **todo flujo empieza en un límite de 8
+bytes**; un flujo en un desplazamiento desalineado resuelve al registro equivocado (eso, junto con el
+byte del desplazamiento, es lo que mantenía vivo el «todos los botones ejecutan el primer flujo»). El
+configurador escribe toques de tecla, botones del ratón, movimiento XY, DPI fijar/restaurar y
+retardos, hasta 21 pasos (`MAX_STEPS`), y deja el paso LED de solo lectura porque su carga útil no
+está descifrada.
 
 ## 5-quater. LED: los catorce efectos, medidos uno a uno
 
@@ -499,31 +570,10 @@ Como la animación comparte byte con la acción, escribir una no puede pisar la 
 `web/core.js` conserva los bits 7–6 cuando se escribe una acción y los bits 4–0 cuando se
 escribe la animación.
 
-### Cómo lo usa el configurador web
+### Manejar la herramienta del fabricante bajo Wine (arnés)
 
-`web/core.js` codifica una macro como **8 bytes por paso** (`01 00 83 <usage>
-<retardo> <usage> 00 00`), el mismo registro que escribe el fabricante, y la asigna al
-botón con `0x2D` + el registro de la ranura. El bloque `0x400` es una lista de **registros
-de 8 bytes** y cada flujo tiene que empezar en uno: al insertar una macro el contenido del
-fabricante se desplaza exactamente `8` (con una macro, su primer registro queda en `0x408`;
-con dos, en `0x410`) y los cuatro punteros de `0x006E` se mueven con él, así que un flujo en
-un desplazamiento no alineado se resuelve al registro equivocado. El byte `0x83` es el de la
-captura «map»; en «first aid» el fabricante puso `0x85`, así que ese byte sigue abierto. El
-editor limita a 21 pasos (168 B de `0x400`, el bloque completo) y no escribe un flujo que no
-quepa.
-
-### Asignar una tecla a un botón (resuelto)
-
-Una tecla en un botón es lo mismo que una macro de un paso: el botón lleva `0x2D`, su ranura
-recibe el registro de §5-ter con **el desplazamiento en el byte 5**, y el bloque guarda el
-paso `01 00 83 <usage> <retardo> <usage> 00 00`. Medido del fabricante (macro «map» = `Q` en
-el botón 10): ranura `01 02 ff 00 00 00 04 00 0A 00`, bloque `01 00 83 14 0A 14 00 00`, y el
-`01 00` que viene detrás es la cabecera del siguiente registro del bloque, no parte del paso.
-El configurador escribe exactamente eso, así que «asignar una tecla» no necesita un camino
-aparte; las macros de varios pasos son ese mismo registro repetido cada 8 bytes (geometría
-contrastada con el bloque del fabricante, todavía no probada en el ratón).
-
-Receta para manejar la herramienta bajo Wine (necesaria para esos volcados):
+Las capturas de §5-bis a §5-quinquies salen del EXE del fabricante corriendo bajo Wine con
+`tools/hid_shim.c` suplantando `HID/SetupAPI`. Receta para una pasada:
 
 ```bash
 docker exec g6re-run bash /work/tools/probe/ui.sh start     # arranca la app
@@ -607,11 +657,15 @@ cualquier tecla y su retardo.
 ## 6. Qué queda abierto
 
 * Correspondencia **código DPI → dpi real** (medir en el ratón).
-* Reparto/allocación de los **registros de acciones avanzadas** (`0x0490`, `0x04a8`,
-  `0x0460`… según qué botones las usan).
-* Formato de los **registros de acciones avanzadas y macros** (`0x00A0–0x02CF`,
-  `0x0400–0x04A7`): se generan al elegir acciones ≥21 y contienen los punteros de
-  `0x006E`. Sin descifrar.
+* Dónde se guarda el **modo de repetición** (Repeat On / hasta clic / hasta soltar) *en el ratón*:
+  es `0x3C` en el `.dat` y el byte de acción no lo lleva (§5-ter), pero la copia en el ratón de esa
+  cabecera no se ha localizado. Relacionado: qué significan las banderas `01` en `0x40`/`0x44`/`0x48`
+  de los registros del `.dat` (aparecen en las macros con pasos XY/LED/CPI).
+* La **carga útil del paso LED** (`01 f9 …`): el fabricante la escribe desde su configuración global
+  y no está descifrada, así que el editor de macros la deja de solo lectura.
+* Los **opcodes de los atajos** del grupo `0x3e`/`0x3f` (§5-bis): `Ctrl+C` → `ef ad 13 0a`, `Ctrl+A`
+  → `cc a8 0e 0a`, `Win+E` → `dd be 03 0a`; la regla que los genera no se ha encontrado, así que
+  todavía no se puede sintetizar un atajo nuevo desde la UI.
 * Codificación de **colores LED** por etapa, `WHEEL_SPEED` y `DPI_SPEED` (los
   incrementos de 1 no cambian ningún byte: o se cuantizan o viven en los registros).
   `LED_CYC_TIME` por sí solo tampoco cambia nada: la herramienta lo escribe **junto a**

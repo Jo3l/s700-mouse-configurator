@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Conduce la UI del fabricante por una lista de casos y guarda, por caso:
-imagen (log de HID), foto y el config.ini que deja la herramienta.
+"""Drive the vendor UI through a list of cases and save, per case:
+image (HID log), shot and the config.ini the tool leaves behind.
 
     led_cases.py cases.json
 
 cases.json = {
-  "effect": 3,                       # indice del desplegable a elegir primero
+  "effect": 3,                       # dropdown index to pick first
   "cases": [ {"name": "bright_min", "actions": [["click",700,528]]}, ... ]
 }
 
-Cada caso termina con un Apply. El log se parte despues por los END (cmd 0x10).
+Every case ends with an Apply. The log is later split on the END markers (cmd 0x10).
 """
 import json, os, subprocess, sys, time
 
@@ -51,7 +51,7 @@ def do(actions):
         elif kind == "sleep":
             time.sleep(a[1])
         else:
-            raise SystemExit("accion desconocida " + kind)
+            raise SystemExit("unknown action " + kind)
         time.sleep(0.6)
 
 
@@ -78,7 +78,7 @@ def main(spec_path):
         sh("tap", "853", "850")
         time.sleep(2.2)
         cp("/app/skins/config/config.ini", os.path.join(HERE, "ini_%s.ini" % name))
-        print("caso", name, flush=True)
+        print("case", name, flush=True)
     sh("save", "cases")
     sh("stop")
 

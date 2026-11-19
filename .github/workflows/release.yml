@@ -51,7 +51,7 @@ jobs:
       - name: Windows x86_64 - WebView2 (MSVC)
         run: cargo build --release --manifest-path native/Cargo.toml
 
-      - name: Renombrar
+      - name: Rename
         shell: bash {0}
         run: cp native/target/release/s700-host.exe s700-host-windows-x86_64.exe
 
@@ -81,12 +81,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configurador de un solo fichero
+      - name: Single-file configurator
         run: |
           make build
-          cp dist/S700-configurador.html S700-configurator.html
+          cp dist/S700-configurator.html S700-configurator.html
 
-      - name: Pruebas
+      - name: Tests
         run: make test
 
       - uses: actions/upload-artifact@v4
@@ -105,7 +105,7 @@ jobs:
         with:
           path: artifacts
 
-      - name: Juntar los ficheros
+      - name: Collect the files
         run: |
           find artifacts -type f -exec cp {} . \;
           ls -la S700-configurator.html 99-s700-hid.rules s700-host-linux-x86_64 s700-host-windows-x86_64.exe S700-configurator-x86_64.AppImage

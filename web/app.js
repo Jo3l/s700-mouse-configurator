@@ -4,7 +4,7 @@
 import * as g6 from "./g6.js";
 import {
   readConfig, applyEdits, planWrites, hexdump, ACTIONS, MEDIA_CHOICES, DPI_CHOICES, BUTTON_LABEL, BUTTONS,
-  macroValue, stepsStream, MAX_STEPS, readLed,
+  macroValue, macroStream, MAX_STEPS, readLed, arenaUsage,
 } from "./core.js";
 import {
   LED_EFFECTS, LED_DIRECTIONS, LED_REACT_NAMES, LED_MAX, LED_USER_COUNT, LED_DPI_COUNT,
@@ -13,23 +13,23 @@ import { DEFAULT_MEM_HEX } from "./default_image.js";
 import * as store from "./storage.js";
 import { keyName, usageFromEventCode } from "./g6.js";
 
-const MEM_SIZE = 0x500;
-// Este firmware se puede escribir pero no leer (docs/PROTOCOL.md §4), así que no
-// hay estado de lectura: la base siempre es la imagen de fábrica o un backup.
+const MEM_SIZE = 0x568;   // how far the vendor tool writes (0x0008–0x0567)
+// This firmware can be written but not read (docs/PROTOCOL.md §4), so there is
+// no read state: the base is always the factory image or a backup.
 const state = {
   dev: null, mem: new Uint8Array(MEM_SIZE), ready: false, dirty: false, edits: {},
   bytes: g6.DATA_LEN, pause: 2,
-  macros: [],          // lista guardada en este navegador (ver pestaña Macros)
+  macros: [],          // list kept in this browser (see the Macros tab)
 };
 
-// Sonda del panel Debug: bytes que se fuerzan DESPUÉS de aplicar las ediciones,
-// para mirar campos que la UI no expone. No se guardan en ningún sitio.
-const pokes = new Map();          // dirección -> byte
+// Debug panel probe: bytes forced AFTER the edits are applied,
+// to look at fields the UI does not expose. They are never saved anywhere.
+const pokes = new Map();          // address -> byte
 
 const $ = id => document.getElementById(id);
 const statusEl = $("status"), logEl = $("log"), hexEl = $("hex"), barEl = $("bar");
 
-// imagen = base + ediciones + sondas del panel Debug
+// image = base + edits + Debug panel probes
 function imgNow() {
   const img = applyEdits(state.mem, state.edits, state.macros);
   for (const [addr, val] of pokes) img[addr] = val;
@@ -41,8 +41,8 @@ function setStatus(text, cls = "") {
   statusEl.className = cls;
 }
 
-// El log se acumula y se vuelca cada 120 ms: escribir en el DOM por cada trama
-// de las 1280 de un volcado hace la lectura 3-4 veces más lenta.
+// The log is buffered and flushed every 120 ms: writing to the DOM for each
+// of the 1280 frames in a dump makes the read 3-4 times slower.
 const logBuf = [];
 let logTimer = null;
 let logCount = 0;
@@ -69,16 +69,16 @@ function log(report, dir) {
   if (!logTimer) logTimer = setTimeout(flushLog, 120);
 }
 
-// línea de texto suelta en el panel HID traffic (para mensajes, no tramas)
+// loose text line in the HID traffic panel (for messages, not frames)
 function logText(line) {
   logBuf.push(line + "\n");
   logCount++;
   if (!logTimer) logTimer = setTimeout(flushLog, 120);
 }
 
-// Imagen de memoria del fabricante (su config.ini de fábrica, capturada del EXE).
-// Es la única base fiable: este firmware implementa SetFeature pero no contesta a
-// GetFeature, así que lo que el ratón tiene ahora mismo no se puede leer.
+// Vendor memory image (its factory config.ini, captured from the EXE).
+// It is the only reliable base: this firmware implements SetFeature but does not
+// answer GetFeature, so what the mouse holds right now cannot be read.
 function stockImage() {
   const img = g6.fromHex(DEFAULT_MEM_HEX);
   const full = new Uint8Array(MEM_SIZE);
@@ -86,7 +86,7 @@ function stockImage() {
   return full;
 }
 
-// Fila de estado del almacenamiento del navegador.
+// Browser storage status row.
 function fmtWhen(ts) {
   if (!ts) return "?";
   const d = new Date(ts);
@@ -114,10 +114,10 @@ function renderStorage() {
   $("btnForget").disabled = !cfg && !info.work;
 }
 
-// Todo cambio pendiente se guarda ya en el navegador (no hay botón de guardar):
-// recargar la página no lo pierde y el archivo sólo hace falta para llevarse la
-// configuración a otro sitio. Se guarda la imagen CON los cambios, pero sin
-// consolidarlos en state.mem: `dirty` sigue significando "no enviado al ratón".
+// Every pending change is saved to the browser right away (there is no save
+// button): reloading the page does not lose it and the file is only needed to
+// carry the configuration elsewhere. The image is saved WITH the changes, but
+// without folding them into state.mem: `dirty` still means "not sent to the mouse".
 let autosaveTimer = null;
 function scheduleAutosave() {
   clearTimeout(autosaveTimer);
@@ -129,8 +129,8 @@ function scheduleAutosave() {
   }, 400);
 }
 
-// Vuelve a la configuración comprometida (la última escrita en el ratón o
-// importada) y tira los cambios sin enviar. Sin nada guardado, a la de fábrica.
+// Goes back to the committed configuration (the last one written to the mouse or
+// imported) and drops the unsent changes. With nothing saved, to the factory one.
 function revertSaved() {
   const rec = store.loadConfig();
   const base = rec ? rec.mem : stockImage();
@@ -157,9 +157,9 @@ function forgetSaved() {
   setStatus("saved configuration removed from this browser", "warn");
 }
 
-// Imagen de fábrica en los selects. Con `pending` (el botón) queda como cambio
-// sin enviar: el usuario decide si lo manda con Apply. Al arrancar sin nada
-// guardado se carga sin marcar cambios.
+// Factory image in the selects. With `pending` (the button) it stays as an unsent
+// change: the user decides whether to send it with Apply. At startup with nothing
+// saved it is loaded without marking changes.
 function loadDefaults(pending = true) {
   state.mem = stockImage();
   state.ready = true;
@@ -171,25 +171,25 @@ function loadDefaults(pending = true) {
   render();
 }
 
-// Este firmware no contesta a GetFeature (§4), así que no hay nada que leer: la
-// base es la imagen guardada en el navegador o la de fábrica. La función existe
-// porque la llama el camino de conexión; antes no estaba definida y conectar
-// terminaba en «connect error: read is not defined» aunque el dispositivo se
-// hubiera abierto bien.
+// This firmware does not answer GetFeature (§4), so there is nothing to read: the
+// base is the image saved in the browser or the factory one. The function exists
+// because the connect path calls it; it used to be undefined and connecting
+// ended in «connect error: read is not defined» even though the device had
+// opened fine.
 async function read() {
   const msg = "nothing to read: this mouse does not answer GetFeature (see PROTOCOL §4)";
   logText("read · " + msg);
   return msg;
 }
 
-// No hay relectura posible (el firmware no contesta a GetFeature), así que lo
-// único que se puede afirmar es cuántos bloques se enviaron y sin error.
+// No read-back is possible (the firmware does not answer GetFeature), so the only
+// thing that can be stated is how many blocks were sent and without error.
 function reportWrite(blocks) {
   state.lastWrite = { blocks, at: Date.now() };
   setStatus(`written ${blocks} blocks · not verifiable: this mouse cannot be read`, "ok");
 }
 
-// La barra de escritura es la misma en todas las pestañas que mandan la imagen.
+// The write bar is the same in every tab that sends the image.
 function progress(done, total) {
   for (const bar of document.querySelectorAll(".bar")) {
     bar.classList.add("on");
@@ -198,7 +198,7 @@ function progress(done, total) {
   }
 }
 
-// ---------------------------------------------------------------- dispositivo
+// ---------------------------------------------------------------- device
 function describeDevice(dev) {
   const lines = [
     `product  : ${dev.productName || "(no name)"}`,
@@ -272,10 +272,10 @@ async function connect(all) {
     setStatus("insecure context: open the page over https or from localhost", "err");
     return;
   }
-  // Sin filtro por vendorId: el ratón expone dos interfaces (ratón y
-  // configuración) con el mismo VID:PID y el diálogo las muestra igual, así que
-  // el usuario acababa eligiendo la de ratón. Las colecciones 0xFF00/0xFF01
-  // identifican la buena y dejan una sola entrada en el diálogo.
+  // No filter by vendorId: the mouse exposes two interfaces (mouse and
+  // configuration) with the same VID:PID and the dialog shows them alike, so the
+  // user ended up picking the mouse one. Collections 0xFF00/0xFF01
+  // identify the right one and leave a single entry in the dialog.
   const filters = all
     ? [{}]
     : [
@@ -287,8 +287,8 @@ async function connect(all) {
   try {
     const picked = await navigator.hid.requestDevice({ filters });
     if (!picked || !picked.length) { setStatus("no device selected", "warn"); return; }
-    // Si el diálogo devuelve varias, se prefiere la que declara el informe
-    // feature 7; si esa no abre, se prueba el resto antes de rendirse.
+    // If the dialog returns several, the one declaring feature report 7 is
+    // preferred; if it does not open, the rest are tried before giving up.
     const score = d => {
       const cols = d.collections || [];
       const has7 = cols.some(c => (c.featureReports || []).some(r => r.reportId === g6.REPORT_ID));
@@ -311,7 +311,7 @@ async function connect(all) {
     state.bytes = g6.reportBytes(dev);
     renderDevice();
     setStatus(`${dev.productName || "device"} connected · ${state.bytes} B report`, "ok");
-    render();          // el estado de Apply depende de que haya dispositivo
+    render();          // the Apply state depends on there being a device
     await read();
   } catch (e) {
     const msg = String(e && e.message || e);
@@ -319,23 +319,23 @@ async function connect(all) {
       setStatus("no matching devices found", "warn");
       $("btnConnectAll").hidden = false;
       $("hintAll").hidden = false;
-      selectTab("debug");   // el diagnóstico y la búsqueda amplia viven ahí
+      selectTab("debug");   // the diagnostic and the broad search live there
     } else if (/Failed to open|Permission denied|Access denied/i.test(msg)) {
       setStatus("connect error: " + msg, "err");
-      // Pasa siempre en Linux mientras /dev/hidrawN sea root:root 0600, y en
-      // Windows si el programa del fabricante tiene el ratón abierto.
+      // Always happens on Linux while /dev/hidrawN is root:root 0600, and on
+      // Windows if the vendor program holds the mouse open.
       $("device").textContent = openHelp(msg);
-      selectTab("debug");   // ver el diagnóstico sin tener que buscarlo
+      selectTab("debug");   // see the diagnostic without having to look for it
     } else {
       setStatus("connect error: " + msg, "err");
     }
   }
 }
 
-// Posiciones de los números 1..10 sobre la imagen (web/mouse.png), en % del
-// ancho y alto: las originales de la herramienta del fabricante
-// (skin_main_en.ini, [BUTTONPOS] 35..44) corregidas sobre la vista nueva, que
-// encuadra el ratón un poco más a la derecha. Se comprueban superponiéndolas.
+// Positions of the numbers 1..10 over the picture (web/mouse.png), in % of the
+// width and height: the vendor tool's originals
+// (skin_main_en.ini, [BUTTONPOS] 35..44) corrected onto the new view, which
+// frames the mouse a bit further right. Checked by overlaying them.
 const HOTSPOTS = {
   1: [36.1, 25.8], 2: [68.0, 24.7], 3: [50.5, 25.0], 4: [22.0, 45.5], 5: [22.0, 55.5],
   6: [50.0, 47.6], 7: [23.0, 19.5], 8: [22.0, 30.5], 9: [33.5, 41.6], 10: [66.5, 41.6],
@@ -379,8 +379,8 @@ function markRow(n, on) {
 
 // ---------------------------------------------------------------- render
 function render() {
-  // Se pinta la imagen CON los cambios pendientes: si no, al repintar el select
-  // vuelve al valor del ratón y el cambio parece no haberse hecho.
+  // The image is painted WITH the pending changes: otherwise, on repaint the select
+  // goes back to the mouse value and the change looks like it was not made.
   const cfg = readConfig(imgNow(), state.macros);
 
   const prof = $("profiles");
@@ -422,13 +422,13 @@ function render() {
     td1.textContent = BUTTON_LABEL[btn.i];
 
     const td2 = document.createElement("td");
-    td2.className = "fn";          // la única celda que puede ceder ancho
+    td2.className = "fn";          // the only cell that can give up width
     const sel = document.createElement("select");
     const none = document.createElement("option");
     none.value = "";
-    // si el ratón guarda un código que no sabemos representar, se muestra tal cual
+    // if the mouse holds a code we cannot represent, it is shown as it is
     none.textContent = btn.action ? "(unassigned)"
-      : btn.code === g6.MACRO_CODE ? "(macro · not in the list)"
+      : g6.MACRO_CODES.includes(btn.code) ? "(macro · not in the list)"
       : (btn.code === null || btn.code === undefined ? "(no button)" : `(as stored: 0x${btn.code.toString(16)})`);
     if (!btn.action) none.selected = true;
     sel.appendChild(none);
@@ -441,8 +441,8 @@ function render() {
       if (btn.action === String(a.id)) o.selected = true;
       gFun.appendChild(o);
     }
-    // las ranuras de los registros de acciones avanzadas sólo están medidas en el
-    // perfil 1, así que en los demás perfiles se ofrecen sólo las 20 funciones
+    // the advanced action record slots are only measured in
+    // profile 1, so the other profiles only offer the 20 functions
     const otherProfile = cfg.profile !== 0;
     const gMed = document.createElement("optgroup");
     gMed.label = otherProfile ? "Media keys (profile 1 only)" : "Media keys";
@@ -469,7 +469,7 @@ function render() {
       o.selected = true;
       gKey.appendChild(o);
     }
-    // macros guardadas: el ratón ejecuta el flujo solo (sólo perfil 1)
+    // saved macros: the mouse runs the stream by itself (profile 1 only)
     const gMacro = document.createElement("optgroup");
     gMacro.label = otherProfile ? "Macros (profile 1 only)" : "Macros";
     gMacro.disabled = otherProfile;
@@ -489,7 +489,7 @@ function render() {
     }
     sel.append(gFun, gMed, gKey, gMacro);
     sel.onchange = () => {
-      if (sel.value === "k") {                                  // abre el capturador
+      if (sel.value === "k") {                                  // opens the capture modal
         openKeyModal(usage => {
           state.edits.buttons = { ...state.edits.buttons, [btn.i]: "k" + usage };
           state.dirty = true;
@@ -539,15 +539,15 @@ function render() {
     dp.appendChild(cell);
   });
 
-  const shown = imgNow();   // lo que se enviaría ahora mismo
+  const shown = imgNow();   // what would be sent right now
   hexEl.textContent = !state.ready
     ? "(nothing loaded yet)"
     : hexdump(shown, 0, 0x80) + "\n…\n" +
-      hexdump(shown, 0x0a0, 0x100) + "\n…\n" + hexdump(shown, 0x400, 0x4a8);
+      hexdump(shown, 0x0a0, 0x1a0) + "\n…\n" + hexdump(shown, 0x400, 0x568);
 
   $("btnDefaults").disabled = false;
-  // Apply manda SIEMPRE la imagen entera, así que no hace falta que haya cambios:
-  // también sirve para volcar en un ratón nuevo una configuración ya guardada.
+  // Apply ALWAYS sends the whole image, so there do not have to be changes:
+  // it also serves to dump an already saved configuration into a new mouse.
   $("btnApply").disabled = !state.dev || !state.ready;
   $("btnBackup").disabled = !state.ready;
   $("btnRestore").disabled = false;
@@ -565,9 +565,45 @@ function render() {
 
   renderLeds(cfg.led);
 
+  // if an edit did not fit in the 0x400 block, the select goes back to the old one:
+  // warn instead of letting it look like the change was made
+  const pending = state.edits.buttons || {};
+  const failed = cfg.buttons.filter(b => pending[b.i] !== undefined && b.action !== pending[b.i]);
+  const warn = $("cfgWarn");
+  if (failed.length) {
+    const msg = `No room for button${failed.length === 1 ? "" : "s"} ` +
+      `${failed.map(b => b.i + 1).join(", ")} in the mouse's macro block (192 B) — ` +
+      `remove a macro or key, or lower “copies per key” in Debug`;
+    setStatus(msg, "warn");
+    warn.textContent = msg;
+    warn.hidden = false;
+  } else {
+    warn.hidden = true;
+    warn.textContent = "";
+  }
+
+  // how a keyboard key is written: hold (default), one tap when
+  // pressed, or taps while it is held.
+  const keyMode = ["tap", "repeat"].includes(state.edits.keyMode) ? state.edits.keyMode : "hold";
+  const modeEl = $("keyMode");
+  if (document.activeElement !== modeEl) modeEl.value = keyMode;
+  const pairs = Number(state.edits.repeatPairs) || g6.REPEAT_PAIRS;
+  const perKey = keyMode === "repeat" ? 2 + pairs * 4
+    : keyMode === "hold" ? g6.HOLD_STREAM_LEN : 8;
+  const fit = Math.floor(g6.STREAM_SIZE / (Math.ceil(perKey / 8) * 8));
+  const slotEl = $("slotMode");
+  if (slotEl && document.activeElement !== slotEl) {
+    const m = Number.isFinite(Number(state.edits.slotMode)) ? Number(state.edits.slotMode) : 0x04;
+    slotEl.value = (m & 0xff).toString(16).padStart(2, "0");
+  }
+  $("keyModeHint").textContent =
+    keyMode === "repeat" ? `${perKey} B per key (${pairs} down/up pairs) · about ${fit} keys in the block`
+    : keyMode === "hold" ? `${perKey} B per key (${g6.HOLD_COPIES} copies) · about ${fit} keys · run until release (0x2e)`
+    : `${perKey} B per key · about ${fit} keys in the block`;
+
   renderMacroList();
 
-  // cualquier cambio pendiente se persiste en el navegador (no toca el ratón)
+  // any pending change is persisted in the browser (it does not touch the mouse)
   if (state.dirty) scheduleAutosave();
 }
 
@@ -579,7 +615,7 @@ function countEdits() {
   return b + d + p + l;
 }
 
-// ------------------------------------------------------- captura de tecla
+// ------------------------------------------------------- key capture
 let keyModalPick = null, keyModalUsage = null;
 
 function openKeyModal(onPick) {
@@ -618,15 +654,15 @@ function useCapturedKey() {
   pick(usage);
 }
 
-// ---------------------------------------------------------------- acciones
+// ---------------------------------------------------------------- actions
 async function apply() {
   if (!state.dev || !state.ready) return;
   try {
     const img = imgNow();
-    // Se manda SIEMPRE la imagen completa, como el fabricante. Escribir sólo los
-    // bloques tocados deja la tabla de punteros de 0x006E sin actualizar y el
-    // ratón descarta el cambio (comprobado en hardware el 17/11/2026: con la
-    // imagen entera la configuración sí surte efecto).
+    // The full image is ALWAYS sent, like the vendor tool. Writing only the
+    // touched blocks leaves the pointer table at 0x006E stale and the
+    // mouse discards the change (checked on hardware on 17/11/2026: with the
+    // whole image the configuration does take effect).
     const writes = g6.WRITE_BLOCKS.map(([addr, len]) => ({ addr, payload: img.slice(addr, addr + len) }));
     setStatus(`writing ${writes.length} blocks…`);
     for (let i = 0; i < writes.length; i++) {
@@ -639,8 +675,8 @@ async function apply() {
     state.edits = {};
     progress(writes.length + 2, writes.length + 2);
     reportWrite(writes.length);
-    // lo que acaba de recibir el ratón es lo que interesa conservar, y deja de
-    // haber cambios pendientes
+    // what the mouse just received is what is worth keeping, and there are
+    // no pending changes any more
     const rec = store.saveConfig(state.mem, "applied");
     store.clearWorkspace();
     renderStorage();
@@ -652,18 +688,18 @@ async function apply() {
 }
 
 function backup() {
-  // Se exporta lo que se ve en pantalla, no sólo la base: los cambios pendientes
-  // viven en state.edits, así que sin consolidarlos el fichero salía viejo.
+  // What is on screen is exported, not just the base: pending changes
+  // live in state.edits, so without folding them in the file came out stale.
   const data = {
     tool: "s700-webhid", version: 1, date: new Date().toISOString(), size: MEM_SIZE,
-    // el sello y el estado van en el fichero: así se sabe qué build lo generó y si
-    // llevaba cambios sin enviar, sin tener que preguntarlo.
+    // the stamp and the state go in the file: that way you know which build made it
+    // and whether it carried unsent changes, without having to ask.
     build: window.__S700_BUILD__ || "dev",
     dirty: !!state.dirty,
     pendingEdits: Object.keys(state.edits.buttons || {}).length,
     connected: !!state.dev,
     mem: g6.toHex(imgNow()),
-    macros: state.macros,   // el flujo ya va en la imagen; esto es nombre y pasos
+    macros: state.macros,   // the stream is already in the image; this is name and steps
   };
   const blob = new Blob([JSON.stringify(data, null, 1)], { type: "application/json" });
   const a = document.createElement("a");
@@ -673,8 +709,8 @@ function backup() {
   URL.revokeObjectURL(a.href);
 }
 
-// Importar NO escribe en el ratón: deja la imagen del fichero en el editor (y en
-// el navegador) para revisarla y mandarla con Apply, como cualquier otro cambio.
+// Import does NOT write to the mouse: it leaves the file's image in the editor (and
+// in the browser) to review it and send it with Apply, like any other change.
 async function importConfig(file) {
   let data;
   try { data = JSON.parse(await file.text()); }
@@ -696,15 +732,15 @@ async function importConfig(file) {
   store.clearWorkspace();
   renderStorage();
   render();
-  selectTab("main");   // los selects están ahí: revisar y Apply
+  selectTab("main");   // the selects are there: review and Apply
   setStatus("configuration imported · review it and press Apply to write it to the mouse", "ok");
 }
 
 
-// ---------------------------------------------------------------- pestañas
-// La página se parte en dos vistas: el configurador y el andamio de depuración.
-// La pestaña activa vive en el hash (#debug) para que recargar no la cambie;
-// algunos navegadores no dejan replaceState en file://, así que va protegido.
+// ---------------------------------------------------------------- tabs
+// The page is split into two views: the configurator and the debug scaffolding.
+// The active tab lives in the hash (#debug) so that reloading does not change it;
+// some browsers do not allow replaceState on file://, so it is wrapped.
 const tabButtons = [...document.querySelectorAll("#tabs [role='tab']")];
 const PANELS = tabButtons.map(t => t.dataset.panel);
 
@@ -743,9 +779,9 @@ function initTabs() {
 }
 
 // ---------------------------------------------------------------- macros
-// Una macro es una lista de pasos de tecla que el ratón ejecuta solo. La lista
-// (nombre + pasos) se guarda en este navegador; su flujo de bytes se escribe en
-// la imagen y viaja al ratón con Apply (docs/PROTOCOL.md §5-ter).
+// A macro is a list of key steps the mouse runs by itself. The list
+// (name + steps) is saved in this browser; its byte stream is written into
+// the image and travels to the mouse with Apply (docs/PROTOCOL.md §5-ter).
 let macroSel = null;
 
 const newMacroId = () => "m" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
@@ -758,8 +794,8 @@ function saveMacros() {
   if (!store.saveMacros(state.macros)) setStatus("could not save the macros in this browser", "warn");
 }
 
-// Los botones que ya lanzaban esta macro se reasignan para que Apply reescriba su
-// flujo: los bytes viven en la imagen y no cambian solos al editar la definición.
+// The buttons that already ran this macro are reassigned so Apply rewrites their
+// stream: the bytes live in the image and do not follow edits to the definition.
 function touchMacroUsers(id, before) {
   const cfg = readConfig(applyEdits(state.mem, state.edits, before), before);
   const users = cfg.buttons.filter(b => b.action === macroValue(id));
@@ -772,16 +808,17 @@ function editMacro(id, mutate) {
   const m = macroById(id);
   if (!m) return;
   const before = state.macros.map(x => ({ ...x, steps: x.steps.map(st => ({ ...st })) }));
-  const beforeBytes = String(stepsStream(m.steps));
+  const beforeBytes = String(macroStream(m));
   mutate(m);
   saveMacros();
-  // sólo si cambian los bytes hay algo que reescribir en el ratón (renombrar no)
-  if (String(stepsStream(m.steps)) !== beforeBytes) touchMacroUsers(id, before);
+  // only if the bytes change is there anything to rewrite in the mouse (renaming is not)
+  if (String(macroStream(m)) !== beforeBytes) touchMacroUsers(id, before);
   render();
 }
 
 function newMacro() {
-  const m = { id: newMacroId(), name: "", steps: [{ usage: 0x04, delay: 10 }] };
+  const m = { id: newMacroId(), name: "", repeat: "release", count: 1,
+    steps: [{ kind: "key", usage: 0x04, delay: 10 }] };
   state.macros = [...state.macros, m];
   macroSel = m.id;
   saveMacros();
@@ -799,8 +836,8 @@ function deleteMacro() {
     : "";
   if (!confirm(`Delete the macro “${m.name || "(unnamed)"}”?` + extra)) return;
   state.macros = state.macros.filter(x => x.id !== m.id);
-  // los botones que la lanzaban vuelven a lo que tengan guardado en la imagen:
-  // se quita la edición pendiente para no dejar un cambio fantasma
+  // the buttons that ran it go back to whatever the image holds:
+  // the pending edit is removed so as not to leave a phantom change
   const buttons = { ...state.edits.buttons };
   for (const n of users) delete buttons[n - 1];
   state.edits = { ...state.edits, buttons };
@@ -835,9 +872,22 @@ function renderMacroList() {
     row.onclick = () => { macroSel = m.id; renderMacroList(); renderMacroForm(); };
     box.appendChild(row);
   }
+  // the limit is not the steps: it is the 192 B arena, shared with the keys
   const used = state.macros.reduce((n, m) => n + (macroUsers(cfg, m.id).length ? m.steps.length : 0), 0);
-  $("macroSpace").textContent = `steps in use: ${used} / ${MAX_STEPS}`;
-  $("macroSpace").className = "mono hint" + (used > MAX_STEPS ? " warn" : "");
+  const arena = arenaUsage(state.mem, state.edits, state.macros);
+  const over = arena.wanted > arena.size;
+  $("macroSpace").textContent = !used
+    ? `arena ${arena.bytes} / ${arena.size} B · nothing assigned`
+    : `arena ${arena.bytes} / ${arena.size} B · ${used} step${used === 1 ? "" : "s"}` +
+      (over ? ` · needs ${arena.wanted} B` : "");
+  $("macroSpace").className = "mono hint" + (over ? " warn" : "");
+}
+
+function paintMacroBytes(m) {
+  const bytes = macroStream(m);
+  $("macroBytes").textContent = bytes.length
+    ? `stream ${bytes.length} B: ` + g6.toHex(bytes).replace(/(..)/g, "$1 ").trim()
+    : "stream: no steps yet";
 }
 
 function renderMacroForm() {
@@ -848,9 +898,15 @@ function renderMacroForm() {
   if (!m) return;
   if (document.activeElement !== $("macroName")) $("macroName").value = m.name;
 
+  const repeat = m.repeat || "on";
+  for (const r of document.querySelectorAll('input[name="macroRepeat"]')) r.checked = r.value === repeat;
+  if (document.activeElement !== $("macroCount")) $("macroCount").value = String(m.count ?? 1);
+  $("macroCount").disabled = repeat !== "on";
+
   const box = $("macroSteps");
   box.textContent = "";
   m.steps.forEach((st, i) => {
+    const kind = st.kind || "key";
     const row = document.createElement("div");
     row.className = "macro-step";
     row.dataset.i = String(i);
@@ -859,31 +915,120 @@ function renderMacroForm() {
     n.className = "mono step-n";
     n.textContent = String(i + 1);
 
-    const key = document.createElement("button");
-    key.textContent = "Key: " + keyName(st.usage);
-    key.title = "Change the key";
-    key.onclick = () => openKeyModal(usage => {
-      editMacro(m.id, mm => { mm.steps[i].usage = usage; });
+    const kindSel = document.createElement("select");
+    kindSel.className = "kind";
+    for (const [v, label] of [["key", "Key"], ["mouse", "Mouse"], ["move", "Move"], ["dpi", "DPI"], ["delay", "Delay"]]) {
+      const o = document.createElement("option");
+      o.value = v; o.textContent = label;
+      if (v === kind) o.selected = true;
+      kindSel.appendChild(o);
+    }
+    kindSel.onchange = () => {
+      const defaults = {
+        key: { kind: "key", usage: 0x04, delay: 10 },
+        mouse: { kind: "mouse", button: "left", dir: "down" },
+        move: { kind: "move", x: 0, y: 10 },
+        dpi: { kind: "dpi", dpi: 800, reset: false },
+        delay: { kind: "delay", ms: 10 },
+      };
+      editMacro(m.id, mm => { mm.steps[i] = defaults[kindSel.value]; });
       renderMacroForm();
-    });
-
-    const lbl = document.createElement("label");
-    lbl.className = "mono";
-    lbl.textContent = "delay";
-
-    const delay = document.createElement("input");
-    delay.type = "number";
-    delay.min = "0"; delay.max = "255"; delay.step = "5";
-    delay.value = String(st.delay);
-    delay.title = "Milliseconds the key stays pressed";
-    delay.oninput = () => {
-      const v = Math.max(0, Math.min(255, Math.round(Number(delay.value) || 0)));
-      editMacro(m.id, mm => { mm.steps[i].delay = v; });
     };
 
-    const ms = document.createElement("span");
-    ms.className = "mono";
-    ms.textContent = "ms";
+    const fields = [];
+    const msLabel = () => {
+      const s = document.createElement("span");
+      s.className = "mono";
+      s.textContent = "ms";
+      return s;
+    };
+    const num = (value, min, max, step, title, oninput) => {
+      const inp = document.createElement("input");
+      inp.type = "number";
+      inp.min = String(min); inp.max = String(max); inp.step = String(step);
+      inp.value = String(value); inp.title = title;
+      inp.oninput = () => oninput(Number(inp.value));
+      return inp;
+    };
+
+    if (kind === "key") {
+      const key = document.createElement("button");
+      key.textContent = "Key: " + keyName(st.usage);
+      key.title = "Change the key";
+      key.onclick = () => openKeyModal(usage => {
+        editMacro(m.id, mm => { mm.steps[i].usage = usage; });
+        renderMacroForm();
+      });
+      // tap = down and up in the same step; separate down and up are the shape
+      // the vendor tool uses to leave a key held («Run until release»)
+      const dir = document.createElement("select");
+      dir.className = "keydir";
+      for (const [v, label] of [["tap", "Tap"], ["down", "Down"], ["up", "Up"]]) {
+        const o = document.createElement("option");
+        o.value = v; o.textContent = label;
+        if ((st.dir || "tap") === v) o.selected = true;
+        dir.appendChild(o);
+      }
+      dir.onchange = () => {
+        editMacro(m.id, mm => {
+          if (dir.value === "tap") delete mm.steps[i].dir;
+          else mm.steps[i].dir = dir.value;
+        });
+        renderMacroForm();
+      };
+      fields.push(key, dir);
+      if ((st.dir || "tap") === "tap") {
+        fields.push(
+          num(st.delay ?? 10, 0, 255, 5, "Milliseconds the key stays pressed",
+            v => editMacro(m.id, mm => { mm.steps[i].delay = Math.max(0, Math.min(255, Math.round(v) || 0)); })),
+          msLabel());
+      }
+    } else if (kind === "mouse") {
+      const b = document.createElement("select");
+      for (const [v, label] of [["left", "Left"], ["middle", "Middle"], ["right", "Right"]]) {
+        const o = document.createElement("option");
+        o.value = v; o.textContent = label;
+        if ((st.button || "left") === v) o.selected = true;
+        b.appendChild(o);
+      }
+      b.onchange = () => { editMacro(m.id, mm => { mm.steps[i].button = b.value; }); renderMacroForm(); };
+      const d = document.createElement("select");
+      for (const [v, label] of [["down", "Down"], ["up", "Up"]]) {
+        const o = document.createElement("option");
+        o.value = v; o.textContent = label;
+        if ((st.dir || "down") === v) o.selected = true;
+        d.appendChild(o);
+      }
+      d.onchange = () => { editMacro(m.id, mm => { mm.steps[i].dir = d.value; }); renderMacroForm(); };
+      fields.push(b, d);
+    } else if (kind === "move") {
+      fields.push(
+        num(st.x ?? 0, -32768, 32767, 1, "Horizontal movement (negative = left)",
+          v => editMacro(m.id, mm => { mm.steps[i].x = Math.round(v) || 0; })),
+        num(st.y ?? 0, -32768, 32767, 1, "Vertical movement (negative = up)",
+          v => editMacro(m.id, mm => { mm.steps[i].y = Math.round(v) || 0; })));
+    } else if (kind === "dpi") {
+      const sel = document.createElement("select");
+      for (const c of DPI_CHOICES) {
+        const o = document.createElement("option");
+        o.value = String(c.dpi); o.textContent = c.dpi + " DPI";
+        if ((st.dpi || 800) === c.dpi) o.selected = true;
+        sel.appendChild(o);
+      }
+      sel.onchange = () => { editMacro(m.id, mm => { mm.steps[i].dpi = Number(sel.value); }); renderMacroForm(); };
+      const chk = document.createElement("label");
+      chk.className = "chk";
+      const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.checked = !!st.reset;
+      cb.onchange = () => { editMacro(m.id, mm => { mm.steps[i].reset = cb.checked; }); renderMacroForm(); };
+      chk.append(cb, document.createTextNode("restore"));
+      fields.push(sel, chk);
+    } else if (kind === "delay") {
+      fields.push(
+        num(st.ms ?? 10, 0, 510, 2, "Milliseconds to wait",
+          v => editMacro(m.id, mm => { mm.steps[i].ms = Math.max(0, Math.min(510, Math.round(v) || 0)); })),
+        msLabel());
+    }
 
     const move = (delta, glyph, title) => {
       const b = document.createElement("button");
@@ -904,31 +1049,28 @@ function renderMacroForm() {
     drop.title = "Remove this step";
     drop.onclick = () => { editMacro(m.id, mm => mm.steps.splice(i, 1)); renderMacroForm(); };
 
-    row.append(n, key, lbl, delay, ms, move(-1, "↑", "Move up"), move(1, "↓", "Move down"), drop);
+    row.append(n, kindSel, ...fields, move(-1, "↑", "Move up"), move(1, "↓", "Move down"), drop);
     box.appendChild(row);
   });
 
   $("btnMacroAddStep").disabled = m.steps.length >= MAX_STEPS;
-  const bytes = stepsStream(m.steps);
-  $("macroBytes").textContent = bytes.length
-    ? `stream ${bytes.length} B: ` + g6.toHex(bytes).replace(/(..)/g, "$1 ").trim()
-    : "stream: no steps yet";
+  paintMacroBytes(m);
 }
 
-// ---------------------------------------------------------------- luces
-// El bloque LED de la imagen (0x1C, 0x1D, 0x20–0x31, 0x3A, 0x3E, 0x3F) está
-// descifrado y contrastado con el config.ini del fabricante (PROTOCOL §5-quater).
-// Los controles se crean una vez y sólo se sincronizan: si se reconstruyeran en
-// cada render, arrastrar un slider perdería el foco.
+// ---------------------------------------------------------------- lights
+// The LED block of the image (0x1C, 0x1D, 0x20–0x31, 0x3A, 0x3E, 0x3F) is
+// decoded and cross-checked against the vendor config.ini (PROTOCOL §5-quater).
+// The controls are built once and only synced: if they were rebuilt on
+// every render, dragging a slider would lose focus.
 const ledRows = { user: [], dpi: [] };
 const ledDirRows = [];
-let ledSpeed = 4;            // último "speed" elegido: no arrastra el nibble fijo de Button response / Mute
+let ledSpeed = 4;            // last "speed" chosen: does not drag the fixed nibble of Button response / Mute
 
 const currentLed = () => readLed(imgNow());
 
-// Los canales del ratón son de 4 bits: el selector nativo da 8, así que se
-// cuantiza a los 16 niveles que caben (v * 17) y se le devuelve al control el
-// valor exacto que se va a escribir.
+// The mouse channels are 4-bit: the native picker gives 8, so it is
+// quantised to the 16 levels that fit (v * 17) and the control is handed back
+// the exact value that is going to be written.
 const toNibble = v => Math.max(0, Math.min(LED_MAX, Math.round(v / 17)));
 const toHex = c => "#" + [c.r, c.g, c.b].map(n => (Math.min(LED_MAX, n) * 17).toString(16).padStart(2, "0")).join("");
 const fromHex = h => ({
@@ -968,7 +1110,7 @@ function buildLedRows() {
         val.textContent = `${c.r} ${c.g} ${c.b}`;
         write(c);
       };
-      // al soltar, el control muestra el color cuantizado, no el que se pidió
+      // on release, the control shows the quantised colour, not the one requested
       picker.onchange = () => { picker.value = toHex(fromHex(picker.value)); };
 
       row.append(picker, name, val);
@@ -997,8 +1139,8 @@ function buildLedRows() {
   }
 }
 
-// dirección (0x3A bits 4–5): el fabricante ofrece dos, tres o cuatro opciones
-// según el efecto; los cuatro radios se crean una vez y se ocultan los que sobran
+// direction (0x3A bits 4–5): the vendor tool offers two, three or four options
+// depending on the effect; the four radios are built once and the spare ones hidden
 function buildLedDirs() {
   if (ledDirRows.length) return;
   LED_DIRECTIONS.forEach((name, k) => {
@@ -1017,7 +1159,7 @@ function buildLedDirs() {
   });
 }
 
-// "Button response": una animación por botón, en los bits 7–6 de su byte de acción
+// "Button response": one animation per button, in bits 7–6 of its action byte
 function buildLedReact() {
   const host = $("ledReact");
   if (!host || host.childElementCount) return;
@@ -1082,7 +1224,7 @@ function renderLeds(led) {
       sel.appendChild(o);
     }
   }
-  // un efecto que la herramienta no tiene (id/banco sin nombre) se marca tal cual
+  // an effect the tool does not have (id/bank with no name) is flagged as it is
   const eff = LED_EFFECTS.find(e => e.ini === led.effect) || null;
   sel.value = eff ? String(eff.ini) : "";
   sel.classList.toggle("unknown", !eff);
@@ -1098,12 +1240,12 @@ function renderLeds(led) {
   ledDirRows.forEach(({ label }, k) => { label.hidden = k >= dirN; });
   $("ledRowFeats").hidden = !opts.has("symmetry") && dirN === 0;
   $("ledOptReact").hidden = !opts.has("react");
-  // los siete colores y sus casillas sólo los enseña el fabricante en los efectos
-  // que ciclan colores; en los demás el color es fijo y no hay nada que elegir
+  // the vendor tool only shows the seven colours and their boxes in the effects
+  // that cycle colours; in the others the colour is fixed and there is nothing to pick
   $("secLedColours").hidden = !opts.has("colours");
 
-  // Button response y Mute guardan un nibble de ciclo fijo: el slider no debe
-  // arrastrarlo al cambiar a otro efecto
+  // Button response and Mute keep a fixed cycle nibble: the slider must not
+  // drag it along when switching to another effect
   if (!eff || eff.cyc === undefined) ledSpeed = led.speed;
 
   $("ledBright").value = String(led.brightness);
@@ -1128,7 +1270,7 @@ function renderLeds(led) {
       row.val.textContent = `${c.r} ${c.g} ${c.b}`;
       if (row.cycle) {
         row.cycle.checked = !!(led.mask & (1 << i));
-        row.cycle.disabled = !opts.has("colours");   // sin máscara no hay ciclo que marcar
+        row.cycle.disabled = !opts.has("colours");   // with no mask there is no cycle to tick
       }
     });
   }
@@ -1142,6 +1284,36 @@ $("btnConnectAll").onclick = () => connect(true);
 $("btnDefaults").onclick = () => loadDefaults(true);
 $("btnLoadSaved").onclick = revertSaved;
 $("btnForget").onclick = forgetSaved;
+// Copies the whole image (0x0000–0x0567) as hex, to compare it with the vendor
+// capture when something does not add up.
+$("btnImageHex").onclick = async () => {
+  const img = imgNow();
+  const text = Array.from(img, (b) => b.toString(16).padStart(2, "0")).join("");
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus(`image copied to the clipboard (${img.length} bytes)`, "ok");
+  } catch (e) {
+    $("keyProbeHint").textContent = text.slice(0, 4000);
+    setStatus("clipboard blocked: the hex is in the hint box", "warn");
+  }
+};
+
+// Copies the log of sent frames (one per line), to compare it with the capture.
+$("btnLogCopy").onclick = async () => {
+  const text = logEl.textContent || "";
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus(`frames copied (${text.split("\n").length} lines)`, "ok");
+  } catch { setStatus("clipboard blocked: select the log text by hand", "warn"); }
+};
+
+// Probe: writes the G key into buttons 4–7, one shape per button, and applies.
+$("btnKeyProbe").onclick = () => {
+  state.edits = { keyProbe: 0x0a };
+  $("keyProbeHint").textContent = g6.KEY_PROBE_SHAPES
+    .map((sh, i) => `${i + 4}: ${sh.name}`).join(" · ");
+  apply();
+};
 $("btnApply").onclick = apply;
 $("btnApplyMacros").onclick = apply;
 $("btnApplyLeds").onclick = apply;
@@ -1162,9 +1334,37 @@ $("macroName").oninput = () => {
   if (!m) return;
   editMacro(m.id, mm => { mm.name = $("macroName").value.slice(0, 40); });
 };
+for (const r of document.querySelectorAll('input[name="macroRepeat"]')) {
+  r.onchange = () => {
+    const m = macroById(macroSel);
+    if (!m) return;
+    editMacro(m.id, mm => { mm.repeat = r.value; if (r.value !== "on") mm.count = 1; });
+    renderMacroForm();
+  };
+}
+$("macroCount").oninput = () => {
+  const m = macroById(macroSel);
+  if (!m) return;
+  const v = Math.max(1, Math.min(999, Math.round(Number($("macroCount").value) || 1)));
+  editMacro(m.id, mm => { mm.count = v; });
+  paintMacroBytes(m);
+};
 $("btnKeyCancel").onclick = () => { closeKeyModal(); render(); };
 $("btnKeyUse").onclick = useCapturedKey;
 $("keyModal").onclick = e => { if (e.target.id === "keyModal") { closeKeyModal(); render(); } };
+$("slotMode").onchange = () => {
+  const v = parseInt($("slotMode").value.replace(/^0x/i, ""), 16);
+  state.edits.slotMode = Number.isFinite(v) ? v & 0xff : 0x04;
+  $("slotMode").value = state.edits.slotMode.toString(16).padStart(2, "0");
+  save(); render();
+};
+$("keyMode").onchange = () => {
+  const v = $("keyMode").value;
+  state.edits.keyMode = ["repeat", "hold"].includes(v) ? v : "tap";
+  state.dirty = true;
+  render();
+};
+
 $("pauseMs").oninput = () => {
   const v = Number($("pauseMs").value);
   state.pause = Number.isFinite(v) ? Math.max(0, Math.min(50, v)) : 2;
@@ -1175,7 +1375,7 @@ $("btnRestore").onclick = () => $("fileRestore").click();
 $("fileRestore").onchange = e => {
   const f = e.target.files[0];
   if (f) importConfig(f);
-  e.target.value = "";   // permite volver a importar el mismo fichero
+  e.target.value = "";   // lets the same file be imported again
 };
 $("btnCopy").onclick = async () => {
   try { await navigator.clipboard.writeText($("device").textContent); setStatus("diagnostic copied", "ok"); }
@@ -1189,7 +1389,7 @@ window.addEventListener("beforeunload", e => {
 if (!navigator.hid) {
   selectTab("main");
   $("btnConnect").disabled = true;
-  // #intro está vacío y oculto: sólo aparece cuando de verdad no se puede conectar
+  // #intro is empty and hidden: it only shows when connecting really is not possible
   if ($("intro")) $("intro").hidden = false;
   if (!window.isSecureContext) {
     // http:// on a LAN IP is not a secure context: WebHID does not exist there.
@@ -1202,7 +1402,7 @@ if (!navigator.hid) {
       "or a file opened by double click). You are on <span class=\"mono\">" +
       location.origin + "</span>, so the mouse cannot be opened from here." +
       (httpsURL ? `<br>Open <a href="${httpsURL}"><b>${httpsURL}</b></a> (accept the certificate warning).` : "") +
-      "<br>Or copy <span class=\"mono\">dist/S700-configurador.html</span> and open it by double click.";
+      "<br>Or copy <span class=\"mono\">dist/S700-configurator.html</span> and open it by double click.";
   } else {
     setStatus("WebHID unavailable: use Chrome, Edge, Brave or Opera", "err");
     $("intro").innerHTML = "This browser cannot talk to the mouse. Open it in " +
@@ -1210,7 +1410,7 @@ if (!navigator.hid) {
   }
 }
 
-// reconectar si el usuario ya dio permiso antes
+// reconnect if the user already granted permission before
 if (navigator.hid) {
   (async () => {
     try {
@@ -1224,7 +1424,7 @@ if (navigator.hid) {
         setStatus(`${dev.productName || "device"} already authorized`, "ok");
         await read();
       }
-    } catch { /* sin permiso previo */ }
+    } catch { /* no previous permission */ }
   })();
 }
 
@@ -1232,17 +1432,17 @@ navigator.hid?.addEventListener("disconnect", e => {
   if (state.dev && e.device === state.dev) { state.dev = null; state.ready = false; setStatus("disconnected", "warn"); renderDevice(); render(); }
 });
 
-// sello del build que está corriendo, siempre visible en Debug: si aquí pone una
-// fecha vieja, el navegador sirvió una copia de caché y cualquier prueba mide el
-// código anterior.
-$("buildInfo").textContent = "build " + (window.__S700_BUILD__ || "dev (sin sellar)");
+// stamp of the build that is running, always visible in Debug: if it shows an
+// old date, the browser served a cached copy and any test measures the
+// previous code.
+$("buildInfo").textContent = "build " + (window.__S700_BUILD__ || "dev (unstamped)");
 
 initTabs();
 renderHotspots();
-// La base es lo último que guardaste en este navegador; si no hay nada, la imagen
-// de fábrica que trae la app (el ratón no se puede leer).
-// Arranque: si quedó trabajo sin enviar se recupera tal cual (con su base), si no
-// la última configuración guardada y, si no hay nada, la imagen de fábrica.
+// The base is the last thing you saved in this browser; if there is nothing, the
+// factory image the app ships (the mouse cannot be read).
+// Startup: if there is unsent work it is restored as is (with its base), otherwise
+// the last saved configuration and, if there is nothing, the factory image.
 function restoreOnLoad() {
   const work = store.loadWorkspace();
   const rec = work ? null : store.loadConfig();
@@ -1264,7 +1464,7 @@ function restoreOnLoad() {
   renderMacroForm();
 }
 
-// ---------------------------------------------------------------- sonda (Debug)
+// ---------------------------------------------------------------- probe (Debug)
 function parseByte(text) {
   const t = String(text).trim();
   if (!t) return null;
@@ -1292,17 +1492,17 @@ function addPoke() {
   }
   pokes.set(addr, val);
   renderPokes();
-  render();                       // que el volcado y las pestañas lo reflejen
+  render();                       // so the dump and the tabs reflect it
 }
 
 $("btnPoke").onclick = addPoke;
 $("btnPokeClear").onclick = () => { pokes.clear(); renderPokes(); render(); };
 renderPokes();
 
-// ------------------------------------------------------ permisos (host nativo)
-// En Linux el nodo /dev/hidraw* es de root. Si el host nativo dice que no puede
-// abrirlo, se ofrece instalar la regla udev: el binario pide la contraseña con
-// pkexec, así que no hay que copiar nada a mano ni ejecutar el servidor como root.
+// ------------------------------------------------------ permissions (native host)
+// On Linux the /dev/hidraw* node belongs to root. If the native host says it cannot
+// open it, installing the udev rule is offered: the binary asks for the password with
+// pkexec, so nothing has to be copied by hand or the server run as root.
 async function checkPermissions() {
   const api = window.__S700_API__;
   if (!api || typeof fetch !== "function" || !$("linPerm")) return;
@@ -1310,7 +1510,7 @@ async function checkPermissions() {
   try {
     state = await (await fetch(`${api}/permissions`)).json();
   } catch (e) {
-    return;                        // host sin esta ruta (binario anterior)
+    return;                        // host without this route (older binary)
   }
   $("linPerm").hidden = !state.needed;
   if (!state.needed) return;

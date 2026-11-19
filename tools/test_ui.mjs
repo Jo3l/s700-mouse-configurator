@@ -26,7 +26,7 @@ check("core exports the view helpers",
   ["readConfig", "planWrites", "hexdump", "ACTIONS", "DPI_CHOICES"].every(k => k in core));
 check("hex <-> bytes round trip", g6.toHex(g6.fromHex("00ff10ab")) === "00ff10ab");
 
-// pestañas: cada tab apunta a un panel existente, uno por vista
+// tabs: each tab points at an existing panel, one per view
 const tabs = [...html.matchAll(/<button role="tab"[^>]*data-panel="([^"]+)"[^>]*aria-controls="([^"]+)"/g)];
 const panels = [...html.matchAll(/<div class="tabpanel" id="([^"]+)"[^>]*role="tabpanel"/g)].map(m => m[1]);
 check("five tabs with their panels", tabs.length === 5 && panels.length === 5, `${tabs.length} tabs / ${panels.length} panels`);
@@ -37,8 +37,8 @@ check("only lights, macros, backup and debug start hidden",
   ["panelLights", "panelMacros", "panelBackup", "panelDebug"].every(id => hiddenPanels.includes(id)),
   hiddenPanels.join(","));
 
-// cada vista tiene lo suyo: el editor en Configuration, las macros en Macros, los
-// ficheros en Backup y el andamio (log, volcado, diagnóstico) en Debug
+// each view has its own: the editor in Configuration, macros in Macros, the
+// files in Backup and the scaffolding (log, dump, diagnostics) in Debug
 const slice = (id, next) => html.split(`id="${id}"`)[1].split(next)[0];
 const mainPanel = slice("panelMain", 'id="panelLights"');
 const lightsPanel = slice("panelLights", 'id="panelMacros"');
@@ -55,24 +55,24 @@ inPanel(lightsPanel, ["ledMode", "ledModeRaw", "ledOptBright", "ledBright", "led
   "ledRowFeats", "ledOptReact", "ledReact", "ledHint", "secLedColours", "secLedDpi", "ledUser", "ledDpi",
   "btnApplyLeds",
   "ledApplyState", "ledBar"], "the lighting controls sit in Lighting");
-check("el panel de efectos enseña los controles de cada efecto y no los de otro",
+check("the effects panel shows each effect's controls and not another's",
   /ledOptBright"\)\.hidden/.test(app) && /ledOptSpeed"\)\.hidden/.test(app) &&
   /ledOptSym"\)\.hidden/.test(app) && /ledOptReact"\)\.hidden/.test(app) &&
   /ledOptDirs"\)\.hidden/.test(app) && /secLedColours"\)\.hidden/.test(app) &&
   !/secLedDpi"\)\.hidden/.test(app));
-check("el button response ofrece la animación de cada botón",
+check("the button response offers each button's animation",
   /function buildLedReact\(/.test(app) && /LED_REACT_NAMES/.test(app) &&
   /const host = \$\("ledReact"\)/.test(app) && /host\.appendChild\(row\)/.test(app));
 
-// en Linux el host nativo ofrece instalar la regla udev sin copiar nada a mano
+// on Linux the native host offers to install the udev rule with nothing copied by hand
 inPanel(debugPanel, ["linPerm", "linPermNode", "btnInstallRule", "linPermState"], "the udev-rule helper sits in Debug");
-check("el aviso de permisos sólo se pinta con el host nativo",
+check("the permissions notice is only painted with the native host",
   /__S700_API__/.test(app) && /\/permissions/.test(app) && /\/install-rule/.test(app) &&
   /state\.needed/.test(app));
 
-// la pestaña Debug trae la sonda de bytes (para mirar campos que la UI no expone)
+// the Debug tab carries the byte probe (to look at fields the UI does not expose)
 inPanel(debugPanel, ["pokeAddr", "pokeVal", "btnPoke", "btnPokeClear", "pokeState"]);
-check("la sonda escribe en la imagen y no se guarda",
+check("the probe writes into the image and is not saved",
   /pokes\.set\(addr, val\)/.test(app) && /for \(const \[addr, val\] of pokes\) img\[addr\] = val/.test(app));
 check("Apply sits after the colours, at the foot of Lighting",
   lightsPanel.indexOf('id="ledDpi"') < lightsPanel.indexOf('id="btnApplyLeds"') &&
@@ -100,7 +100,7 @@ check("diagram numbers reuse the table badge",
 check("app.js wires the lighting tab",
   /buildLedRows\(\);/.test(app) && /buildLedDirs\(\);/.test(app) && /buildLedReact\(\);/.test(app) &&
   /function renderLeds\(/.test(app) && /btnApplyLeds"\).onclick/.test(app) && /ledMode"\).onchange/.test(app));
-check("los ids viejos de luces desaparecieron (direction era un checkbox)",
+check("the old lighting ids are gone (direction was a checkbox)",
   !/id="ledDirection"/.test(html) && !/LED_MODE_IDS|LED_MODE_DARK/.test(app) && !/LED_MODE_IDS|LED_MODE_DARK/.test(html));
 check("app.js wires the macro editor",
   ["newMacro", "deleteMacro", "editMacro", "renderMacroList", "renderMacroForm"].every(f => new RegExp(`function ${f}\\(`).test(app)) &&

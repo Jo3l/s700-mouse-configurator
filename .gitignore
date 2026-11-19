@@ -19,6 +19,7 @@ tools/probe/debug/
 
 # software del fabricante: tiene copyright, no se publica
 original/
+S700 Gaming Mouse/
 # muestras de la biblioteca de macros del fabricante (material suyo, se quedan fuera)
 /*.dat
 

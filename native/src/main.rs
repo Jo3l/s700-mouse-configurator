@@ -1,14 +1,14 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
-//! Host nativo del configurador S700.
+//! Native host for the S700 configurator.
 //!
-//! Sirve la UI de web/ desde dentro del binario (127.0.0.1, sólo local), abre
-//! el navegador y hace de puente con el HID del ratón. La página no cambia: en
-//! lugar de navigator.hid usa el enchufe de web/bridge.js, que este proceso
-//! inyecta al servir el HTML.
+//! Serves the web/ UI from inside the binary (127.0.0.1, local only), opens
+//! the browser and bridges to the mouse HID. The page does not change: instead
+//! of navigator.hid it uses the web/bridge.js shim, which this process injects
+//! when serving the HTML.
 //!
-//! HTTP a mano sobre std, hidraw en Linux e hid.dll en Windows; la ventana es
-//! un WebView del sistema (WebView2 / WebKitGTK) vía wry.
+//! HTTP by hand over std, hidraw on Linux and hid.dll on Windows; the window is
+//! a system WebView (WebView2 / WebKitGTK) via wry.
 
 mod hid;
 mod ui;
@@ -27,7 +27,7 @@ const STORE: &str = include_str!("../../web/storage.js");
 const IMAGE: &str = include_str!("../../web/default_image.js");
 const BRIDGE: &str = include_str!("../../web/bridge.js");
 const MOUSE_PNG: &[u8] = include_bytes!("../../web/mouse.png");
-// la regla udev viaja dentro del binario: --install-rule la escribe y recarga udev
+// the udev rule travels inside the binary: --install-rule writes it and reloads udev
 const RULES: &str = include_str!("../99-s700-hid.rules");
 const RULES_PATH: &str = "/etc/udev/rules.d/99-s700-hid.rules";
 
@@ -95,9 +95,9 @@ fn main() {
     serve(port, launch, app_window);
 }
 
-/// En Windows release el .exe es de subsistema GUI (no abre consola al hacer
-/// doble clic). Si lo lanzas desde cmd, se engancha a esa consola para que
-/// --list, --help y --install-rule sigan escribiendo donde toca.
+/// On Windows release the .exe is a GUI subsystem binary (no console on
+/// double click). If you launch it from cmd, it attaches to that console so
+/// --list, --help and --install-rule keep writing where they should.
 #[cfg(windows)]
 fn attach_console() {
     #[link(name = "kernel32")]
@@ -154,7 +154,7 @@ fn node_writable(node: &str) -> bool {
         .is_ok()
 }
 
-/// Escribe la regla y recarga udev. Sólo tiene sentido como root.
+/// Writes the rule and reloads udev. Only makes sense as root.
 fn install_rule_as_root() -> (bool, String) {
     if let Err(e) = std::fs::write(RULES_PATH, RULES) {
         return (false, format!("cannot write {RULES_PATH}: {e}\n"));
@@ -175,8 +175,8 @@ fn install_rule_as_root() -> (bool, String) {
     (true, log)
 }
 
-/// Instala la regla: directa si ya somos root, si no reejecutándose con pkexec,
-/// que es lo que muestra el diálogo de contraseña del escritorio.
+/// Installs the rule: directly if already root, otherwise by re-executing with
+/// pkexec, which is what shows the desktop password dialog.
 fn elevate_install() -> (bool, String) {
     if is_root() {
         return install_rule_as_root();
@@ -211,7 +211,7 @@ fn elevate_install() -> (bool, String) {
     }
 }
 
-/// Estado que consulta la UI para ofrecer el botón de instalar la regla.
+/// State the UI queries to offer the install-rule button.
 fn permissions_json() -> String {
     #[cfg(target_os = "linux")]
     {
@@ -273,16 +273,16 @@ fn serve(port: u16, launch: bool, app_window: bool) {
     println!("  Ctrl+C to stop");
 
     if launch && app_window {
-        // La ventana (WebView) tiene que correr en el hilo principal; el HTTP que
-        // sirve la UI y el puente HID va en otro.
+        // The window (WebView) has to run on the main thread; the HTTP that
+        // serves the UI and the HID bridge go on another one.
         let serving = Arc::clone(&host);
         std::thread::spawn(move || accept_loop(listener, serving));
         if let Err(e) = ui::run(&url) {
             eprintln!("  webview: {e}");
-            eprintln!("  webview: no hay WebView utilizable; abro una ventana de Edge/Chrome");
+            eprintln!("  webview: no usable WebView; opening an Edge/Chrome window");
             launch_app(&url);
         }
-        // la ventana manda: cuando se cierre, el proceso termina
+        // the window rules: when it closes, the process ends
         loop {
             std::thread::park();
         }
@@ -316,16 +316,16 @@ fn open_browser(url: &str) {
     let _ = url;
 }
 
-// Navegadores de la familia Chromium: en modo --app abren una ventana sin
-// pestañas ni barra de direcciones, que es lo que se espera de un configurador.
+// Chromium-family browsers: in --app mode they open a window without tabs or
+// address bar, which is what you expect from a configurator.
 #[cfg(target_os = "linux")]
 const BROWSER_NAMES: &[&str] = &[
     "microsoft-edge", "microsoft-edge-stable", "google-chrome", "google-chrome-stable",
     "chromium", "chromium-browser", "brave-browser", "vivaldi", "vivaldi-stable",
 ];
 
-// Perfil propio de la ventana: así lo que se lanza es una instancia única y,
-// cuando cierras la ventana, este proceso también termina (no queda de fondo).
+// Own profile for the window: that way what launches is a single instance and,
+// when you close the window, this process ends too (nothing stays in background).
 fn profile_dir() -> Option<PathBuf> {
     #[cfg(target_os = "linux")]
     {
@@ -375,8 +375,8 @@ fn find_browser() -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.is_file())
 }
 
-/// Abre el configurador en una ventana de aplicación (sin pestañas ni barra de
-/// direcciones). Si no hay ningún Chromium a mano, usa el navegador por defecto.
+/// Opens the configurator in an application window (no tabs, no address bar).
+/// If no Chromium is at hand, it uses the default browser.
 fn launch_app(url: &str) {
     let bin = match find_browser() {
         Some(bin) => bin,
@@ -414,7 +414,7 @@ fn launch_app(url: &str) {
 fn handle(host: &Host, mut conn: TcpStream) -> std::io::Result<()> {
     let mut head = Vec::new();
     let mut chunk = [0u8; 4096];
-    // cabecera hasta \r\n\r\n
+    // header up to \r\n\r\n
     loop {
         let n = conn.read(&mut chunk)?;
         if n == 0 {
@@ -510,7 +510,7 @@ fn handle(host: &Host, mut conn: TcpStream) -> std::io::Result<()> {
             let id = jnum(&body, "id").unwrap_or(7) as u8;
             let data = jints(&body, "data");
             if data.is_empty() {
-                return json_err(&mut conn, "el informe va vacío");
+                return json_err(&mut conn, "the report is empty");
             }
             let guard = match host.dev.lock() {
                 Ok(g) => g,
@@ -524,12 +524,12 @@ fn handle(host: &Host, mut conn: TcpStream) -> std::io::Result<()> {
                     }
                     Err(e) => json_err(&mut conn, &e.to_string()),
                 },
-                None => json_err(&mut conn, "el dispositivo no está abierto"),
+                None => json_err(&mut conn, "the device is not open"),
             }
         }
         ("POST", "/api/recv") => json_err(
             &mut conn,
-            "el ratón no contesta a GetFeature: no hay nada que leer (docs/PROTOCOL.md §4)",
+            "the mouse does not answer GetFeature: there is nothing to read (docs/PROTOCOL.md §4)",
         ),
         ("GET", p) => match asset(p) {
             Some((ctype, bytes)) => respond(&mut conn, "200 OK", ctype, bytes),
@@ -543,8 +543,8 @@ fn find_body_start(head: &[u8]) -> Option<usize> {
     head.windows(4).position(|w| w == b"\r\n\r\n").map(|i| i + 4)
 }
 
-/// El HTML viaja con el enchufe inyectado: la definición de la API tiene que
-/// existir antes de que bridge.js se ejecute.
+/// The HTML travels with the shim injected: the API definition has to exist
+/// before bridge.js runs.
 fn index_html() -> String {
     INDEX.replace(
         "</head>",

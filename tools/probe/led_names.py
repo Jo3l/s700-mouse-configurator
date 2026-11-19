@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Empareja cada efecto del desplegable del fabricante con el byte que escribe.
+"""Pair each vendor dropdown effect with the byte it writes.
 
-Para cada LED_TYPE del ini: arranca la herramienta, abre la pestaña LED, hace una
-foto del desplegable, pulsa Apply para que escriba, y guarda el byte 0x1C del log.
-Con eso queda nombre -> byte sin adivinar el orden de la lista.
+For each LED_TYPE in the ini: start the tool, open the LED tab, take a shot of the
+dropdown, press Apply so it writes, and save byte 0x1C from the log. That gives
+name -> byte without guessing the list order.
 
-Salida: tools/probe/led_names.json y una tira PNG con las fotos para leerlas de un
-vistazo (tools/probe/led_names.png).
+Output: tools/probe/led_names.json and a PNG strip of the shots to read at a
+glance (tools/probe/led_names.png).
 """
 import json, os, subprocess, sys
 
@@ -16,7 +16,7 @@ from parse_log import parse, memory
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "led_names.json")
-CROP = (700, 362, 870, 392)   # el valor del desplegable de modo
+CROP = (700, 362, 870, 392)   # the mode dropdown's value
 
 
 def sh(*args):
@@ -30,7 +30,7 @@ def main(modes):
         text = exp.set_vals(exp.load(), "ShareData", LED_TYPE=k)
         exp.save(text)
         sh("start")
-        sh("tap", "530", "200")          # pestaña LED
+        sh("tap", "530", "200")          # LED tab
         sh("shot", "mode_%d" % k)
         sh("tap", "853", "850")          # Apply
         subprocess.run(["sleep", "2"])
@@ -40,9 +40,9 @@ def main(modes):
         mem = memory(parse(log)) if os.path.exists(log) else {}
         raw = mem.get(0x1C)
         out[k] = None if raw is None else raw >> 4
-        print("ini LED_TYPE=%-3d -> byte 0x%s -> modo %s" % (k, "??" if raw is None else "%02x" % raw, out[k]), flush=True)
+        print("ini LED_TYPE=%-3d -> byte 0x%s -> mode %s" % (k, "??" if raw is None else "%02x" % raw, out[k]), flush=True)
     json.dump(out, open(OUT, "w"), indent=1)
-    print("guardado", OUT)
+    print("saved", OUT)
 
 
 if __name__ == "__main__":

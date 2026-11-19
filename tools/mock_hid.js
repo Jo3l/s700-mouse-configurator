@@ -1,8 +1,8 @@
-// Ratón falso para probar el configurador en el navegador sin hardware.
-// Imita el descriptor real del S700 y, como Chrome, RECHAZA informes del tamaño
-// equivocado (el feature 7 declara 56 bits = 7 bytes).
-//   window.__img  → memoria del ratón falso (0x500 bytes)
-//   window.__sent → tramas enviadas (7 bytes de datos cada una)
+// Fake mouse to test the configurator in the browser without hardware.
+// Mimics the real S700 descriptor and, like Chrome, REJECTS reports of the wrong
+// size (feature 7 declares 56 bits = 7 bytes).
+//   window.__img  → fake mouse memory (0x500 bytes)
+//   window.__sent → frames sent (7 data bytes each)
 (function () {
   const MEM = 0x500;
   const img = new Uint8Array(MEM);

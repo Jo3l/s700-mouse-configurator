@@ -38,7 +38,7 @@ s700-host [--port N] [--no-open] [--browser] [--list]
 | | Permissions | Depends on | Size |
 |---|---|---|---|
 | `make serve` + Chrome | WebHID dialog + udev rule on Linux | a browser with WebHID | 0 |
-| `dist/S700-configurador.html` | same (it opens as `file://`) | same | ~520 KB |
+| `dist/S700-configurator.html` | same (it opens as `file://`) | same | ~580 KB |
 | `make native` | **nothing on Windows**; udev on Linux | Windows: nothing (WebView2 ships with Edge). Linux: `libwebkit2gtk-4.1-0` + `libgtk-3-0` | ~1.3 MB |
 
 All three serve the same UI: `web/` is not duplicated or adapted.

@@ -1,9 +1,9 @@
-//! Ventana de la aplicación: la UI que sirve este mismo proceso, dentro de un
-//! WebView del sistema — WebView2 en Windows, WebKitGTK en Linux — sin navegador
-//! externo, sin pestañas y sin barra de direcciones.
+//! Application window: the UI this very process serves, inside a system
+//! WebView — WebView2 on Windows, WebKitGTK on Linux — with no external browser,
+//! no tabs and no address bar.
 //!
-//! La página no cambia: sigue siendo la de `web/` y sigue hablando por
-//! `web/bridge.js` contra el HTTP local (el HID lo abre este proceso).
+//! The page does not change: it is still the one from `web/` and still talks
+//! through `web/bridge.js` against the local HTTP (this process opens the HID).
 
 use std::error::Error;
 
@@ -18,9 +18,9 @@ fn boxed(e: impl Error + Send + Sync + 'static) -> String {
     e.to_string()
 }
 
-/// Abre la ventana y corre su bucle de eventos. Sólo vuelve (con error) si no
-/// se puede crear la ventana o el WebView; si todo va bien, termina el proceso
-/// al cerrarla.
+/// Opens the window and runs its event loop. It only returns (with an error) if
+/// the window or the WebView cannot be created; if all goes well, it ends the
+/// process when the window is closed.
 pub fn run(url: &str) -> Result<(), String> {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
@@ -31,7 +31,7 @@ pub fn run(url: &str) -> Result<(), String> {
 
     let builder = WebViewBuilder::new().with_url(url);
 
-    // En Windows y macOS el WebView cuelga de la ventana; en Linux, de su caja GTK.
+    // On Windows and macOS the WebView hangs off the window; on Linux, off its GTK box.
     #[cfg(target_os = "windows")]
     let webview = builder.build(&window).map_err(boxed)?;
 
@@ -47,7 +47,7 @@ pub fn run(url: &str) -> Result<(), String> {
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
-        let _ = &webview;   // se queda vivo mientras dure la ventana
+        let _ = &webview;   // it stays alive as long as the window does
         if let Event::WindowEvent { event: WindowEvent::CloseRequested, .. } = event {
             *control_flow = ControlFlow::Exit;
         }

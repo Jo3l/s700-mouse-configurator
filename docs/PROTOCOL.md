@@ -31,7 +31,7 @@ product «USB GAMING MOUSE»):
 | Configuration collection | `UsagePage 0xFF01`, `Usage 0x01` |
 | Report | *feature* **report ID 7, 7 bytes of data** (8 with the ID) |
 | VID/PID accepted by the program | `0x30FA` with `0x1540` or `0x1E01` (it compares `HIDD_ATTRIBUTES` and a list of product names) |
-| API used | `HidD_SetFeature` / `HidD_GetFeature` on a `CreateFile(..., GENERIC_READ|GENERIC_WRITE)` handle |
+| API used | `HidD_SetFeature` / `HidD_GetFeature` on a `CreateFile(..., GENERIC_READ\|GENERIC_WRITE)` handle |
 
 > **Watch the size.** The vendor program passes a 65-byte buffer and the HID stack
 > trims it to 8 without complaint; WebHID (and `hidapi` on Windows) require the exact
@@ -129,7 +129,7 @@ upload).
 
 Writing only the blocks that change **has no effect**: the mouse accepts the
 commits (there is no error) and keeps running the previous configuration. With the full
-image — the 108 blocks of `WRITE_BLOCKS`, in the same order the
+image — the 132 blocks of `WRITE_BLOCKS`, in the same order the
 vendor uses, with the pointer table at `0x006E` included — the change does apply.
 That is why the configurator always sends the whole image.
 
@@ -146,14 +146,14 @@ That is why the configurator always sends the whole image.
 | `0x0044–0x004E` | buttons of **profile 1** |
 | `0x0050–0x005A` | buttons of **profile 2** |
 | `0x0060–0x006A` | buttons of **profile 3** |
-| `0x006E–0x007F` | table of pointers to registers + checksum (changes with the actions) |
-| `0x00A0–0x02CF` | advanced action / macro registers (not deciphered) |
-| `0x0400–0x04A7` | more registers and a flags block |
+| `0x006E–0x007F` | "next free" pointers of the macro library + checksum — they move with the library (§5-ter) |
+| `0x00A0–0x02CF` | the ten button slots (10 B each, §5-ter), the five shared records at `0x14A`–`0x18F` and the copies of the library pointers inside the two media records (`0x0203`, `0x028F`) |
+| `0x0400–0x0567` | **macro area**: `0x0400–0x04BF` arena of the buttons' flows, `0x04C0–0x0567` macro library (§5-ter) |
 | `0x0080–0x009F` | **not** written with the default configuration (unused profiles?) |
 
 The program **always writes** `0x0001`, `0x006E` (2 bytes) and the 15 blocks from
-`0x0008` to `0x007F`, plus `0x00A0–0x02CF` and `0x0400–0x04A7`. It never writes
-`0x0080–0x009F` in profile 1.
+`0x0008` to `0x007F`, plus `0x00A0–0x02CF` and `0x0400–0x0567`. It never writes
+`0x0080–0x009F` in profile 1. The configurator writes the same 132 blocks on every Apply.
 
 ### Buttons (profile 0 = the active one)
 
@@ -312,67 +312,135 @@ actions of this group. Their registers are:
 | 53 | `01 82 ff 00 00 80 04 00 8a` |
 | 259 | `01 88 ff 00 00 90 04 00 0a` |
 
-The values `0x89`, `0x8c`, `0x82`, `0x88`, `0x8a`, `0x84` fit suspiciously well
-with **HID modifier masks** (`0x01` Ctrl, `0x02` Shift, `0x04` Alt,
-`0x08` Win, `0x80` "there is a modifier"), so the key and modifier fields
-are there even though we still do not know in what order. That implies that **assigning Shift
-(or Ctrl+C) to a button is representable**; confirming the exact split of
-fields and who executes the key is still pending.
+Those `0x89`, `0x8c`, `0x82`, `0x88` values were first read as **HID modifier masks**; they are
+not. They are the type byte of §5-ter (the flow's word count, `0x80 | words`) and the `0x04xx` is
+the absolute address of the flow, so these five registers are the shared record pool that macros use
+too, and ids 50–53/259 are the factory's own library entries rather than shortcuts.
 
-**Unresolved:** where exactly the key and the modifier come from (the
-tool has a "Please enter the key" dialogue), how the
-registers are distributed when several buttons use advanced functions (the pointer table at
-`0x006E` changes base: `0x0490`, `0x04a8`, `0x0460`…) and whether the mouse executes those
-keys itself.
+The shortcut captures of this group write `01 00` + four (opcode, usage) pairs at the register in
+`0x186`: `Ctrl+C` → `ef ad 13 0a`, `Ctrl+A` → `cc a8 0e 0a`, `Win+E` → `dd be 03 0a`. The opcodes
+change with the shortcut and the rule behind them has not been found, so a new shortcut still cannot
+be synthesised (§6).
 
-> Important detail: the mouse descriptor **has no keyboard collection**
-> (only mouse `0xFF00`, configuration `0xFF01` and consumer `0x0C`), and the vendor's EXE does not import
-> `SendInput` or `keybd_event`. Either the keys of this group
-> are sent by the firmware through a path we do not see, or they depend on the
-> application being open. It takes 2 minutes to check: assign `Copy` to a button,
-> **fully close** the vendor application and press the button in
-> Notepad.
+**Unresolved:** how the registers are distributed when several buttons use advanced functions (the
+pointer table at `0x006E` changes base: `0x0490`, `0x04a8`, `0x0460`…) and where the key and the
+modifier of a shortcut come from (the tool has a "Please enter the key" dialogue).
 
-## 5-ter. Macros: yes, they are stored on the mouse
+> The mouse descriptor **has no keyboard collection** (only mouse `0xFF00`, configuration `0xFF01`
+> and consumer `0x0C`) and the vendor's EXE does not import `SendInput`/`keybd_event`, yet a key
+> assigned to a button does reach the OS **with the vendor tool closed** — that is what the hold in
+> §5-ter proves. So the firmware sends it itself, through the vendor collection.
 
-Contrary to what it seemed at first, **the macro contents are uploaded to the mouse**
-on every Apply: the `0x0400–0x04A7` block of the dump contains the step flow, and
-it matches what the editor shows. `constMacro.dat` is only the PC copy
-(8 macros), the source from which that block is filled.
+## 5-ter. Macros and keys: the macro area
 
-Assigning by hand (Macro tab → choose macro → Insert → Apply) the
-"first aid" macro (key `8`, 10 ms, key `8`, 20 ms) to button 10, the vendor wrote:
+Macro contents **are uploaded to the mouse** on every Apply: the `0x0400` block of the image
+carries the step flow and it matches what the editor shows. `constMacro.dat` (§5-quinquies) is
+only the PC-side library the vendor tool fills that block from.
 
-| byte | value | meaning |
+### Layout: a 192 B arena, then the macro library
+
+| range | contents |
+|---|---|
+| `0x0400–0x04BF` | **arena**: flows of the buttons that carry a key or a macro (192 B) |
+| `0x04C0–0x0567` | **macro library**: the flows that belong to no button (168 B) |
+| `0x014A`, `0x0154`, `0x0168`, `0x0172`, `0x0186` | the library's five records, 10 B each, same shape as a button slot |
+| `0x006E` (×4), `0x0079`, `0x007B`, `0x0203`, `0x028F` | "next free" pointers of the library |
+
+The factory image (`web/default_image.js`, rebuilt from `tools/probe/baseline.log`) keeps the
+library **in `0x0400`** — inside the arena — and everything that addresses it sits with it. That
+is the trap that cost two sessions: writing a key at `0x0400` overwrites the library while its
+five records still point there, so the firmware resolves the button's flow against the library and
+runs the wrong one. The vendor tool shifts library **and** records by `+0xC0`
+(`LIB_BASE 0x04C0 − STREAM_BASE 0x0400`) when it allocates the first button flow;
+`liftLibrary()` in `web/core.js` does the same at the start of every `applyEdits` and is
+idempotent (if the records already sit at `0x04C0` or above, it touches nothing). A capture of a
+configuration that holds keys has the records at `0x04C0`/`0x04E0`/`0x0510`/`0x0540`/`0x0550` and
+the pointers at `0x0568`…`0x0588`.
+
+### The slot record (10 bytes)
+
+| byte | meaning |
+|---|---|
+| 0 | `0x01` |
+| 1 | type: **number of steps** (Repeat On, until click) or **`0x80 \| words`** (until release) |
+| 2 | `0xFF` |
+| 3–4 | parameter: consumer usage in multimedia records, `0x0000` in macros |
+| 5–6 | **address of the flow, uint16 little-endian, absolute** (`0x0400` + offset) |
+| 7 | `0x04`, the same for all three repeat modes |
+| 8–9 | length; `0x000A` in every record the configurator writes |
+
+The first builds of the configurator put the offset in bytes 3–4, so the firmware read `0` in
+every record and **every button played the first flow** (four buttons with W, Shift, O and I all
+typed `W`); those images are still read through a fallback. Bytes 5–6 are an absolute address, not
+"offset plus a fixed `0x04`": the `0x04` is the high byte of `0x04xx`. The library records, which
+live above `0x0500`, carry `0x0510`, `0x0540`, `0x0550`.
+
+### Flow formats
+
+A flow starts with a **uint16 repeat count** (only `Repeat On` uses it; the other modes write `1`)
+followed by variable-length elements:
+
+| bytes | meaning |
+|---|---|
+| `83 <usage> <delay> <usage> 00 00` | key tap, 6 B, carries its own release (`85` appears in the vendor's `first aid` and is accepted when reading) |
+| `83 <usage>` / `82 <usage>` | key down / key up, 2 B each |
+| `81 <code>` / `01 <code>` | mouse button down / up, `f1`/`f2`/`f3` = left/middle/right |
+| `01 f6 <x16> <y16>` | move, signed int16 |
+| `81 f8 <dpi/200>` / `01 f8 <dpi/200>` | DPI set / restore |
+| `01 f9 <…>` | LED step (payload not decoded, read-only in the configurator) |
+| `00 <ms/2> 00` | delay in 2 ms units (`00 01 00` = 2 ms) |
+
+Keys are **HID usages** (`0x04` A, `0x14` Q, `0x1A` W, `0xE1` LShift). The vendor's `.dat` stores
+Windows virtual-key codes and converts them when it uploads the flow (§5-quinquies).
+
+The type byte is **decoded**: bit 7 marks the run-until-release family and the low seven bits are
+the number of 2-byte words of the flow body — the flow length is stored nowhere else, so that is
+how the firmware knows where it ends. Twelve captures agree: 20 `81 <usage>` words → `0x94`, a
+54-byte nine-tap macro → `0x9b`, 13 down/up pairs → `0x9a`. A declared word count that does not
+match the flow makes the firmware misread it.
+
+### The three ways to put a key on a button — all measured on the mouse
+
+| mode in the UI | what is written | size | behaviour |
+|---|---|---|---|
+| **hold while pressed** (default) | action `0x2E`, slot `01 94 ff 00 00 <addr> 04 00 0A 00`, flow `01 00` + 20× `81 <usage>` | 42 B | **holds**: the key goes down when the button is pressed — with the system's auto-repeat, like a real key — and comes up when it is released |
+| **tap once** | action `0x2D`, slot type `0x02`, flow `01 00 83 <usage> <delay> <usage> 00 00` (the vendor's `map` macro) | 8 B | one tap per press; it carries its own release, so it can never stick |
+| **tap while held** | action `0x2D`, slot type `0x80 \| 2·pairs`, flow `01 00` + pairs of `81 <usage> 01 <usage>` (the `tap_q` capture) | 2 + 4·pairs | taps while the button is held; each pair releases before the next one |
+
+The hold is the vendor's own shape — twenty copies **and** `0x2E` is exactly what the `kd_shift`
+and `kd_q` captures carry — and it only works once the library is out of the arena (above).
+Capacity inside the 192 B arena, with the 8-byte alignment the firmware expects:
+
+| mode | bytes per key | keys that fit |
 |---|---|---|
-| `0x0E` (button 10) | `0x2D` | **action = macro** (multimedia was `0x2F`, basic `0x21–0x3A`) |
-| `0xDC` (its slot) | `01 02 ff 00 00 00 04 00 0A 00` | type `02` = macro, byte 5 = offset in the block, bytes 3–4 = parameter (0 for macros, the consumer usage for multimedia), `0A 00` = length |
-| `0x400` | `01 00 85 25 0A 25 00 00 01 00` | the macro flow: 8 bytes, plus the `01 00` that heads the next record |
+| hold | 42 | **4** |
+| tap once | 8 | 24 (the mouse only has 10 buttons, so all of them) |
+| tap while held | 2 + 4·pairs (18 with 4 pairs, padded to 24) | 8 |
 
-Inside the flow **HID keyboard usages** appear: `0x25` is key `8` (`0x1E`
-= `1`, `0x1F` = `2`… `0x26` = `9`), which is exactly the key of that macro. So
-the mouse stores keys as HID usages, and a button can execute them without the
-vendor application.
+Macros share that arena with the keys, so the limit is bytes and not steps: a macro takes
+`2 B + its steps` (padded to 8), i.e. a 21-step tap macro is 128 B and leaves room for one held key
+(42 B) and nothing else. A flow that does not fit is not written: the button keeps its previous
+action and the table shows `No room for button N…`; the Macros tab prints how much of the 192 B is
+in use.
 
-**The offset is byte 5, not bytes 3–4.** The slot record is
-`01 <type> ff <param_lo> <param_hi> <offset> 04 00 <len_lo> <len_hi>`: the bytes that
-carry data are 3–4 and they hold the *parameter* of the action (a consumer usage in the
-multimedia records, e.g. `01 00 ff 23 02 b0 04 00 0A 00` for Browser = `0x0223`), while the
-displacement into `0x400` is the single byte 5. Two independent captures confirm it: the
-vendor's second macro leaves `01 00 ff 00 00 08 04 00 00 00` — offset `8` for the second
-macro, `0` for the first — and when it inserts one macro the six pointers of `0x006E` grow
-by `8`, i.e. **each assigned macro takes 8 bytes at the front of the arena** and the rest is
-shifted. Same when two are assigned (+`0x10`) — in that case it reserves the space and
-writes no steps at all (those macros live on the PC, not on the mouse).
+### The action byte says what it launches, not how it repeats
 
-The configurator wrote the offset in bytes 3–4 until this was found, so the firmware read
-`0` in every record and **every button played the first flow**: four buttons with W, Shift,
-O and I all typed `W`. `web/g6.js` and `web/core.js` now write and read byte 5 (older
-images are still read through the 3–4 fallback).
+`0x2D` is the **inline** macro (the path the vendor's `Convert K1 to a macro` takes, into the
+button's own block) and `0x2E` the **library** macro; the disassembly has exactly two sites writing
+them (`0x534797` → `0x2E`, and `0x53478E` → `0x2F` for multimedia). Assigning the same `mirror`
+macro with modes `01` and `02` wrote byte-identical action and slot
+(`01 82 ff 00 00 10 04 00 0A 00`), and mode `00` wrote `0x2D`: the difference is the assignment
+path (library vs inline), not the mode. Slot byte 7 does not change with the mode either — the
+`0x84` that earlier notes read as "Run until click" is byte 8 of the record. Where the mode lives
+inside the macro is still open: it is `0x3C` in the `.dat`, and the on-mouse copy of that header
+has not been located.
 
-The macro editor also supports steps of type XY (movement), CPI (DPI
-change), LED and delays, and repeat options ("Run Until release", "Run Until
-Click", "Repeat On = N").
+Multi-step macros are the same arena record. The vendor moves its own arena content by exactly 8
+bytes per inserted macro, so **every flow starts on an 8-byte boundary**; a flow on an unaligned
+offset resolves to the wrong record (that, together with the offset byte, is what kept "every macro
+button plays the first flow" alive). The configurator writes key taps, mouse buttons, XY movement,
+DPI set/restore and delays, up to 21 steps (`MAX_STEPS`), and leaves the LED step read-only because
+its payload is not decoded.
 
 ## 5-quater. LED: the fourteen effects, measured one by one
 
@@ -496,30 +564,10 @@ Because the animation shares the byte with the action, a write to one must not c
 other: `web/core.js` preserves bits 7–6 when an action is written and bits 4–0 when the
 animation is.
 
-### How the web configurator uses it
+### Driving the vendor tool under Wine (harness)
 
-`web/core.js` encodes a macro as **8 bytes per step** (`01 00 83 <usage> <delay>
-<usage> 00 00`), the same record the vendor writes, and assigns it to the button with `0x2D`
-+ the register of the slot. The arena is a list of **8-byte records** and every flow must
-start on one: inserting a macro moves the vendor's own arena content by exactly `8` (one
-macro → the first factory record sits at `0x408`; two → `0x410`) and the four pointers at
-`0x006E` move with it, so a flow at an unaligned offset resolves to the wrong record. The
-byte `0x83` is the one from the "map" capture; in "first aid" the vendor put `0x85`, so
-that byte remains open. The editor limits to 21 steps (168 B from `0x400`, the whole
-block) and does not write a flow that does not fit.
-
-### Assigning a key to a button (resolved)
-
-A key on a button is the same thing as a one-step macro: the button carries `0x2D`, its slot
-gets the record of §5-ter with **the offset in byte 5**, and the arena holds the step
-`01 00 83 <usage> <delay> <usage> 00 00`. Measured from the vendor (macro «map» = `Q` on
-button 10): slot `01 02 ff 00 00 00 04 00 0A 00`, arena `01 00 83 14 0A 14 00 00`, and the
-`01 00` that follows is the head of the next arena record, not part of the step. The
-configurator writes exactly that, so "assign a key" needs no separate path; multi-step
-macros are the same record repeated every 8 bytes (verified against the vendor's arena
-geometry, not yet on the mouse).
-
-Recipe for driving the tool under Wine (needed for those dumps):
+The captures behind §5-bis to §5-quinquies come from the vendor EXE running under Wine with
+`tools/hid_shim.c` impersonating `HID/SetupAPI`. Recipe for one pass:
 
 ```bash
 docker exec g6re-run bash /work/tools/probe/ui.sh start     # starts the app
@@ -599,11 +647,15 @@ Macros tab creates steps with any key plus a delay.
 ## 6. What remains open
 
 * **DPI code → real dpi** correspondence (measure on the mouse).
-* Distribution/allocation of the **advanced action registers** (`0x0490`, `0x04a8`,
-  `0x0460`… depending on which buttons use them).
-* Format of the **advanced action and macro registers** (`0x00A0–0x02CF`,
-  `0x0400–0x04A7`): they are generated when picking actions ≥21 and contain the pointers of
-  `0x006E`. Not deciphered.
+* Where the **repeat mode** (Repeat On / until click / until release) is stored *on the mouse*: it
+  is `0x3C` in the `.dat` and the action byte does not carry it (§5-ter), but the on-mouse copy of
+  that header has not been located. Related: what the `01` flags at `0x40`/`0x44`/`0x48` of the
+  `.dat` records (present in the macros that carry XY/LED/CPI steps) mean.
+* The **LED step** payload (`01 f9 …`): the vendor writes it from its global configuration and it
+  is not decoded, so the macro editor leaves it read-only.
+* The **shortcut opcodes** of the `0x3e`/`0x3f` group (§5-bis): `Ctrl+C` → `ef ad 13 0a`, `Ctrl+A`
+  → `cc a8 0e 0a`, `Win+E` → `dd be 03 0a`; the rule behind them has not been found, so a new
+  shortcut cannot be synthesised from the UI yet.
 * Encoding of **LED colours** per stage, `WHEEL_SPEED` and `DPI_SPEED` (increments of
   1 change no byte: either they are quantised or they live in the registers).
   `LED_CYC_TIME` alone changes nothing either: the tool writes it **together with**

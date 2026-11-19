@@ -31,15 +31,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Empaquetar el configurador
+      - name: Bundle the single-file configurator
         run: |
           make build
           mkdir -p public
-          cp dist/S700-configurador.html public/index.html
+          cp dist/S700-configurator.html public/index.html
           touch public/.nojekyll
           ls -la public
 
-      - name: Configurar Pages
+      - name: Configure Pages
         uses: actions/configure-pages@v5
         with:
           enablement: true      # si Pages aún no está activado, lo activa

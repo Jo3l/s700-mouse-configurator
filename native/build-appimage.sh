@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# AppImage autocontenido del host nativo (Linux x86_64).
+# Self-contained AppImage of the native host (Linux x86_64).
 #
-# El binario enlaza WebKitGTK y GTK, así que un AppImage "de verdad" tiene que
-# llevar dentro esas librerías Y los procesos que WebKit lanza por su cuenta
-# (WebKitWebProcess / WebKitNetworkProcess / WebKitGPUProcess + su injected
-# bundle). Todo eso se hace en un contenedor Ubuntu 22.04 (glibc 2.35), que es
-# también el suelo del AppImage: Debian 12+, Ubuntu 22.04+.
+# The binary links WebKitGTK and GTK, so a "real" AppImage has to carry those
+# libraries inside AND the processes WebKit spawns on its own
+# (WebKitWebProcess / WebKitNetworkProcess / WebKitGPUProcess + their injected
+# bundle). All of that is done in an Ubuntu 22.04 container (glibc 2.35), which
+# is also the floor for the AppImage: Debian 12+, Ubuntu 22.04+.
 #
 #   ./native/build-appimage.sh
 #   -> dist/S700-configurator-x86_64.AppImage  (~90-150 MB)
@@ -23,21 +23,21 @@ apt-get install -y -qq curl ca-certificates build-essential pkg-config file patc
   libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libx11-dev \
   libwebkit2gtk-4.1-0 libgtk-3-0 libsoup-3.0-0 >/dev/null
 
-# Rust reciente (wry 0.57 pide 1.85+)
+# Recent Rust (wry 0.57 asks for 1.85+)
 if ! command -v cargo >/dev/null; then
   curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal >/dev/null
   . "$HOME/.cargo/env"
 fi
 cargo build --release --manifest-path /w/native/Cargo.toml
 
-# herramientas de empaquetado
+# packaging tools
 cd /tmp
 curl -sSL -o linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
 curl -sSL -o linuxdeploy-plugin-gtk.sh https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
 curl -sSL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
 chmod +x linuxdeploy linuxdeploy-plugin-gtk.sh appimagetool
 
-# AppDir: escritorio + icono + el binario
+# AppDir: desktop file + icon + the binary
 mkdir -p /tmp/AppDir/usr/share/applications /tmp/AppDir/usr/share/icons/hicolor/256x256/apps
 cat > /tmp/s700.desktop <<EOF
 [Desktop Entry]
@@ -58,9 +58,9 @@ export PATH="/tmp:$PATH"
   --icon-file /w/native/s700.png \
   --plugin gtk 2>&1 | tail -15
 
-# linuxdeploy deja fuera las librerías que considera "del sistema" (freetype,
-# fontconfig, png…). Un escritorio las tiene, pero el AppImage se anuncia como
-# autocontenido: se copian si faltan, que son ~2 MB.
+# linuxdeploy leaves out the libraries it considers "system" ones (freetype,
+# fontconfig, png…). A desktop has them, but the AppImage advertises itself as
+# self-contained: they are copied if missing, which is ~2 MB.
 for lib in libfreetype.so.6 libfontconfig.so.1 libpng16.so.16 libharfbuzz.so.0 \
            libgraphite2.so.3 libexpat.so.1 libbrotlidec.so.1 libbrotlicommon.so.1 \
            libX11.so.6 libX11-xcb.so.1 libXau.so.6 libXdmcp.so.6 libxcb.so.1 \
@@ -75,10 +75,10 @@ for lib in libfreetype.so.6 libfontconfig.so.1 libpng16.so.16 libharfbuzz.so.0 \
   fi
 done
 
-# Cierre de dependencias: linuxdeploy deja fuera "lo del sistema" y cada
-# escritorio es distinto, así que se recorre ldd de todo lo que hay en el AppDir
-# y se copia lo que falte, salvo la libc y los drivers gráficos (esos mejor del
-# sistema: son los que hablan con la GPU).
+# Dependency closure: linuxdeploy leaves "system stuff" out and every desktop is
+# different, so ldd is walked over everything in the AppDir and whatever is
+# missing is copied, except libc and the graphics drivers (those better from the
+# system: they are the ones that talk to the GPU).
 for round in 1 2 3 4; do
   for f in /tmp/AppDir/usr/bin/s700-host /tmp/AppDir/usr/lib/*.so*; do
     [ -f "$f" ] || continue
@@ -93,16 +93,16 @@ for round in 1 2 3 4; do
   done
 done
 
-# WebKit lanza sus procesos auxiliares desde su propio directorio
+# WebKit spawns its helper processes from its own directory
 mkdir -p /tmp/AppDir/usr/lib/webkit2gtk-4.1
 cp -a /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/. /tmp/AppDir/usr/lib/webkit2gtk-4.1/
 rm -f /tmp/AppDir/usr/lib/webkit2gtk-4.1/MiniBrowser
 
-# WebKitGTK no tiene variable para la ruta de sus procesos: LIBEXECDIR va como
-# cadena absoluta dentro de la librería. Se reapunta a una ruta relativa
-# (misma longitud, relleno con NUL) y el AppRun arranca con el AppDir como
-# directorio de trabajo, así que "./usr/lib/webkit2gtk-4.1/..." resuelve dentro
-# del AppImage sin tocar el sistema.
+# WebKitGTK has no variable for its process path: LIBEXECDIR goes as an
+# absolute string inside the library. It is repointed to a relative path
+# (same length, NUL padded) and AppRun starts with the AppDir as working
+# directory, so "./usr/lib/webkit2gtk-4.1/..." resolves inside the AppImage
+# without touching the system.
 python3 - <<"PY"
 lib = "/tmp/AppDir/usr/lib/libwebkit2gtk-4.1.so.0"
 data = open(lib, "rb").read()
@@ -117,7 +117,7 @@ for old, new in [
 open(lib, "wb").write(data)
 PY
 
-# AppRun propio: rutas relativas, sin tocar el sistema
+# Own AppRun: relative paths, without touching the system
 rm -f /tmp/AppDir/AppRun
 cat > /tmp/AppDir/AppRun <<"EOF"
 #!/bin/sh
@@ -136,6 +136,6 @@ mkdir -p /w/dist
 /tmp/appimagetool /tmp/AppDir /w/dist/S700-configurator-x86_64.AppImage 2>&1 | tail -5
 ls -la /w/dist/*.AppImage
 '
-# el contenedor compila como root: devolver el target al usuario
+# the container builds as root: give the target back to the user
 docker run --rm -v "$repo:/w" "$img" chown -R "$(id -u):$(id -g)" /w/native/target 2>/dev/null || true
 ls -la "$repo/dist/S700-configurator-x86_64.AppImage"

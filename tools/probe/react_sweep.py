@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Que guarda la herramienta para 'Button response': barre LED_REACT_* de
-Config0 con ShareData.LED_TYPE=12 y compara la imagen, tomando como base la
-misma LED_TYPE=12 sin tocar react."""
+"""What the tool stores for 'Button response': sweep LED_REACT_* in Config0
+with ShareData.LED_TYPE=12 and compare the image, using the same LED_TYPE=12
+with react untouched as the base."""
 import json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import exp
@@ -28,7 +28,7 @@ for name, text in CASES:
     exp.save(text)
     exp.run(name)
     mems[name] = memory(parse(os.path.join(HERE, name + ".log")))
-    print("listo", name, flush=True)
+    print("done", name, flush=True)
 
 base = mems["r_none"]
 for name, _ in CASES[1:]:

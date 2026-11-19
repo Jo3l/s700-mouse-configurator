@@ -1,8 +1,7 @@
-//! Capa HID del host: enumerar y escribir el feature report.
+//! HID layer of the host: enumerate and write the feature report.
 //!
-//! No hay lectura a propósito: el firmware del S700 contesta a los informes de
-//! salida pero no a GetFeature (docs/PROTOCOL.md §4), así que el host sólo
-//! escribe.
+//! There is no read on purpose: the S700 firmware answers output reports but
+//! not GetFeature (docs/PROTOCOL.md §4), so the host only writes.
 
 #[cfg(target_os = "linux")]
 #[path = "linux.rs"]
@@ -15,5 +14,5 @@ mod windows;
 #[cfg(windows)]
 pub use windows::{enumerate, open, Device};
 
-/// Tamaño del feature report del S700 (report id 7, 64 bytes de datos).
+/// Size of the S700 feature report (report id 7, 64 data bytes).
 pub const REPORT_BYTES: usize = 64;
