@@ -86,6 +86,11 @@ Rutas del host: `GET /api/devices`, `GET /api/state`, `POST /api/open`,
 `POST /api/send`, `POST /api/recv` (siempre falla: el firmware no contesta a
 GetFeature, `docs/PROTOCOL.md` §4).
 
+Páginas: `/` (la consola normal) y `/eva/` (la piel ORIEL, también dentro del binario y con
+el mismo puente inyectado), así que *Debug → Theme* cambia de piel dentro de la ventana.
+`/eva` sin la barra final redirige, porque la piel resuelve `./eva.css`, `../app.js` y
+`../mouse.png` relativos a su propio directorio.
+
 ## Permisos
 
 **Windows**: nada. El proceso abre el dispositivo como cualquier otro fichero;

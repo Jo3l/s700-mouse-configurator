@@ -1432,10 +1432,48 @@ navigator.hid?.addEventListener("disconnect", e => {
   if (state.dev && e.device === state.dev) { state.dev = null; state.ready = false; setStatus("disconnected", "warn"); renderDevice(); render(); }
 });
 
+// ---------------------------------------------------------------- theme (Debug)
+// The two skins are two pages over the same app.js, the same ids and the same
+// localStorage origin, so switching skin is a navigation to the sibling page —
+// never a re-render: the ORIEL page is one long page with no tabs.
+function currentTheme() {
+  const p = location.pathname;
+  return /-eva\.html?$/i.test(p) || /(^|\/)eva(\/|$)/i.test(p) ? "eva" : "classic";
+}
+
+// Where the other skin lives, from wherever this page was loaded: the native host
+// and the AppImage (`window.__S700_API__`) serve both, a directory serves
+// `eva/index.html`, and a double-clicked single file sits next to its twin.
+function themeHref(theme) {
+  const p = location.pathname;
+  if (typeof window.__S700_API__ === "string") return theme === "eva" ? "/eva/" : "/index.html";
+  if (/(^|\/)(index\.html?)?$/i.test(p)) return theme === "eva" ? "eva/index.html" : "../index.html";
+  return theme === "eva" ? p.replace(/(\.html?)$/i, "-eva$1") : p.replace(/-eva(\.html?)$/i, "$1");
+}
+
+// Switching is a page load, so anything pending is written to the browser first:
+// the other skin restores it from there, and the mouse is still untouched.
+function wireTheme() {
+  const sel = $("themeSelect");
+  if (!sel) return;
+  const here = currentTheme();
+  sel.value = here;
+  const to = here === "eva" ? "classic" : "eva";
+  $("themeHint").textContent = (to === "eva" ? "ORIEL (EVA-01)" : "classic console") + " \u00b7 " + themeHref(to);
+  sel.onchange = () => {
+    if (sel.value === here) return;
+    clearTimeout(autosaveTimer);
+    try { if (state.ready) store.saveWorkspace(state.mem, state.edits); } catch { /* go anyway */ }
+    location.href = themeHref(sel.value);
+  };
+}
+
 // stamp of the build that is running, always visible in Debug: if it shows an
 // old date, the browser served a cached copy and any test measures the
 // previous code.
 $("buildInfo").textContent = "build " + (window.__S700_BUILD__ || "dev (unstamped)");
+
+wireTheme();
 
 initTabs();
 renderHotspots();

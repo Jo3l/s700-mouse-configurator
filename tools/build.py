@@ -104,7 +104,9 @@ return {{ {", ".join(store_names)} }};
     if not os.path.exists(img):
         sys.exit("missing web/mouse.png (the diagram image)")
     b64 = base64.b64encode(open(img, "rb").read()).decode()
-    html = html.replace('src="./mouse.png"', 'src="data:image/png;base64,%s"' % b64)
+    # the classic page sits next to web/mouse.png, the EVA page one level down
+    for ref in ('src="./mouse.png"', 'src="../mouse.png"'):
+        html = html.replace(ref, 'src="data:image/png;base64,%s"' % b64)
 
     html = html.replace("</head>", '<script>window.__S700_BUILD__ = "%s";</script>\n</head>' % stamp())
 

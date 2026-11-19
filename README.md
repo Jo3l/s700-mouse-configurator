@@ -18,6 +18,7 @@
 | **Linux, nothing to install** | [`S700-configurator-x86_64.AppImage`](https://github.com/Jo3l/s700-mouse-configurator/releases/latest) — one file, `chmod +x` and run: it carries WebKitGTK inside |
 | **Linux** | [`s700-host-linux-x86_64`](https://github.com/Jo3l/s700-mouse-configurator/releases/latest) — run it; if it cannot open the mouse it offers to install the udev rule and asks for your password once |
 | **a single HTML file** | `S700-configurator.html` from the release: double click it in Chrome/Edge/Brave, no server needed |
+| **the alternative look** | *Debug → Theme* switches between the classic console and **ORIEL** (EVA-01), or open <https://jo3l.github.io/s700-mouse-configurator/eva/> directly in the browser |
 
 The binaries are built by GitHub Actions on every release
 ([`.github/workflows/release.yml`](.github/workflows/release.yml)) and the web page is
@@ -51,7 +52,7 @@ everything byte for byte against what the vendor tool writes.
 | **Profiles** | 4 button profiles, active one switchable from a button |
 | **Backup** | export/import the whole configuration as JSON; the factory image ships with the tool |
 | **Saving** | every change is saved in the browser; the mouse only changes when you press **Apply** |
-| **Debug** | device and udev rule, byte probe, memory image and hex dump, the HID traffic, the three key modes and a probe that writes four key shapes to four buttons in one Apply |
+| **Debug** | device and udev rule, byte probe, memory image and hex dump, the HID traffic, the three key modes, a probe that writes four key shapes to four buttons in one Apply and the **theme switch** between the two skins |
 
 ![Lighting tab: effects, brightness and the 13 colours](docs/img/lighting.png)
 
@@ -87,6 +88,15 @@ neither; `make build-eva` builds only the second and `make test` gates both
 (`tools/test_ui_eva.mjs` checks that the new page offers every control app.js asks for).
 The skin keeps the reference's type stacks with system fallbacks and draws its background
 lattice on a 2D canvas, so the single file still works with no network and no CDN.
+
+**Switching between them: *Debug → Theme*.** The dropdown at the top of the Debug tab opens the
+other skin, whichever way you are running the tool: the binaries and the AppImage serve both
+pages themselves (`/` and `/eva/`), the published page has its own address,
+<https://jo3l.github.io/s700-mouse-configurator/eva/>, and the two single files
+(`S700-configurator.html` and `S700-configurator-eva.html`) are released side by side, so a
+double click on either one finds its twin. It is a page load, not a re-render: your unsent
+changes are saved in the browser first, the other skin restores them, and nothing is written to
+the mouse until you press **Apply**.
 
 ## Quick start
 
@@ -242,7 +252,7 @@ make serve     # http://localhost:8099/web/index.html
 make build     # dist/S700-configurator.html + dist/S700-configurator-eva.html
 make build-eva # only the EVA-01 skin
 make native    # native/target/release/s700-host
-make test      # 309 assertions
+make test      # 315 assertions
 ```
 
 The tests replay bytes captured from the vendor tool (`tools/probe/baseline.log`), so

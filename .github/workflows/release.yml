@@ -85,6 +85,7 @@ jobs:
         run: |
           make build
           cp dist/S700-configurator.html S700-configurator.html
+          cp dist/S700-configurator-eva.html S700-configurator-eva.html
 
       - name: Tests
         run: make test
@@ -94,6 +95,7 @@ jobs:
           name: extras
           path: |
             S700-configurator.html
+            S700-configurator-eva.html
             native/99-s700-hid.rules
 
   release:
@@ -108,7 +110,7 @@ jobs:
       - name: Collect the files
         run: |
           find artifacts -type f -exec cp {} . \;
-          ls -la S700-configurator.html 99-s700-hid.rules s700-host-linux-x86_64 s700-host-windows-x86_64.exe S700-configurator-x86_64.AppImage
+          ls -la S700-configurator.html S700-configurator-eva.html 99-s700-hid.rules s700-host-linux-x86_64 s700-host-windows-x86_64.exe S700-configurator-x86_64.AppImage
 
       - uses: softprops/action-gh-release@v2
         with:
@@ -118,4 +120,5 @@ jobs:
             s700-host-windows-x86_64.exe
             S700-configurator-x86_64.AppImage
             S700-configurator.html
+            S700-configurator-eva.html
             99-s700-hid.rules

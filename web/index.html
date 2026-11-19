@@ -275,6 +275,25 @@
   <!-- ================================================================= debug -->
   <div class="tabpanel" id="panelDebug" role="tabpanel" aria-labelledby="tabDebug" hidden>
     <section>
+      <h2>Theme</h2>
+      <div class="body">
+        <div class="row">
+          <label class="mono" for="themeSelect">skin</label>
+          <select id="themeSelect">
+            <option value="classic" selected>Classic console</option>
+            <option value="eva">ORIEL (EVA-01)</option>
+          </select>
+          <span class="mono hint" id="themeHint" style="margin-left:auto"></span>
+        </div>
+        <p class="hint" style="margin-bottom:0">
+          The two skins are the same configurator over the same saved configuration; the other one
+          opens as its own page in this window. Your unsent changes travel with it — they live in this
+          browser, not in the page — and nothing is written to the mouse until <b>Apply</b>.
+        </p>
+      </div>
+    </section>
+
+    <section>
       <h2>Device</h2>
       <div class="body">
         <p class="hint" id="hintAll" hidden>

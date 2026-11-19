@@ -59,7 +59,7 @@
       <div class="ph"><span>Configuration</span><span class="jp">操作</span></div>
       <div class="body buttons-layout">
         <div class="diagram" id="diagram">
-          <img src="./mouse.png" alt="Mouse seen from above; the numbers on the hover targets are the vendor tool's">
+          <img src="../mouse.png" alt="Mouse seen from above; the numbers on the hover targets are the vendor tool's">
         </div>
         <div class="buttons-table">
           <p class="hint warn" id="cfgWarn" hidden></p>
@@ -316,6 +316,25 @@
         <h2 class="disp sec-h">Diagnostics<span class="alt">.</span></h2>
         <p class="lede">Device, byte probe, memory image, HID traffic and the three key modes. Anything that says the browser cannot work stays in the default panel.</p>
       </div>
+
+    <section class="panel">
+      <div class="ph"><span>Theme</span><span class="jp">皮膚</span></div>
+      <div class="body">
+        <div class="row">
+          <label class="mono" for="themeSelect">skin</label>
+          <select id="themeSelect">
+            <option value="classic">Classic console</option>
+            <option value="eva" selected>ORIEL (EVA-01)</option>
+          </select>
+          <span class="mono hint" id="themeHint" style="margin-left:auto"></span>
+        </div>
+        <p class="hint" style="margin-bottom:0">
+          The two skins are the same configurator over the same saved configuration; the other one
+          opens as its own page in this window. Your unsent changes travel with it — they live in this
+          browser, not in the page — and nothing is written to the mouse until <b>Apply</b>.
+        </p>
+      </div>
+    </section>
 
     <section class="panel">
       <div class="ph"><span>Device</span><span class="jp">機器</span></div>

@@ -22,6 +22,11 @@ check("eva: the five chapters are still the panels, never hidden",
   !/id="panel\w+"[^>]*hidden/.test(html) &&
   // the floating notice reuses .sec too, but it lives outside main
   (html.match(/<section class="sec" id="panel/g) || []).length === 5);
+check("eva: the theme switch starts on this skin and points back",
+  /<option value="eva" selected>ORIEL/.test(html) && /<option value="classic">/.test(html));
+check("eva: its diagram image resolves from its own directory",
+  /src="\.\.\/mouse\.png"/.test(html) &&
+  existsSync(new URL("../web/mouse.png", import.meta.url)));
 check("eva: it loads the same app.js as the classic page",
   /<script type="module" src="\.\.\/app\.js"><\/script>/.test(html));
 check("eva: its own skin behaviour is loaded", /src="\.\/eva\.js"/.test(html));
@@ -127,8 +132,12 @@ check("eva: the ribs fall back to one column on narrow screens",
   /@media \(max-width:899px\)\{[\s\S]*?#buttons tr,\s*#[\s\S]*?width:100%/.test(css));
 check("eva: the mouse photo has no filter", !/\.diagram img\{[^}]*filter:/.test(css));
 
+// the diagram lives at web/mouse.png and the page sits one level down; tools/build.py
+// inlines every spelling of that path, so the single file still works
+const buildPy = readFileSync(new URL("../tools/build.py", import.meta.url), "utf8");
 check("eva: the diagram image is inlined by the build",
-  /src="\.\/mouse.png"/.test(html) && existsSync(new URL("../web/mouse.png", import.meta.url)));
+  /src="\.\.\/mouse.png"/.test(html) && existsSync(new URL("../web/mouse.png", import.meta.url)) &&
+  /'src="\.\.\/mouse\.png"'/.test(buildPy));
 
 console.log(fails ? fails + " FAILED" : "all eva ui checks passed");
 if (fails) process.exitCode = 1;

@@ -70,6 +70,21 @@ check("the permissions notice is only painted with the native host",
   /__S700_API__/.test(app) && /\/permissions/.test(app) && /\/install-rule/.test(app) &&
   /state\.needed/.test(app));
 
+// the Debug tab switches skin: the two skins are two pages over one app.js, so the
+// switch navigates to the sibling page instead of re-rendering
+inPanel(debugPanel, ["themeSelect", "themeHint"], "the theme switch sits in Debug");
+check("the theme switch offers both skins",
+  /<option value="classic" selected>Classic console/.test(debugPanel) &&
+  /<option value="eva">ORIEL \(EVA-01\)/.test(debugPanel));
+check("switching skin navigates to the sibling page built by tools/build.py",
+  /function themeHref\(/.test(app) && /-eva\$1/.test(app) &&
+  /location\.href = themeHref\(sel\.value\)/.test(app) &&
+  /theme === "eva" \? "eva\/index\.html"/.test(app) &&
+  /theme === "eva" \? "\/eva\/" : "\/index\.html"/.test(app));
+check("no change is lost on the way: the workspace is flushed before navigating",
+  /clearTimeout\(autosaveTimer\)/.test(app) && /store\.saveWorkspace\(state\.mem, state\.edits\)/.test(app) &&
+  /wireTheme\(\);/.test(app));
+
 // the Debug tab carries the byte probe (to look at fields the UI does not expose)
 inPanel(debugPanel, ["pokeAddr", "pokeVal", "btnPoke", "btnPokeClear", "pokeState"]);
 check("the probe writes into the image and is not saved",

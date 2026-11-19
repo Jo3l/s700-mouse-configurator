@@ -36,6 +36,9 @@ jobs:
           make build
           mkdir -p public
           cp dist/S700-configurator.html public/index.html
+          # la otra piel, en su propia ruta: Debug > Theme navega a eva/index.html
+          mkdir -p public/eva
+          cp dist/S700-configurator-eva.html public/eva/index.html
           touch public/.nojekyll
           ls -la public
 

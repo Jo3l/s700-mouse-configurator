@@ -27,6 +27,11 @@ const STORE: &str = include_str!("../../web/storage.js");
 const IMAGE: &str = include_str!("../../web/default_image.js");
 const BRIDGE: &str = include_str!("../../web/bridge.js");
 const MOUSE_PNG: &[u8] = include_bytes!("../../web/mouse.png");
+// the ORIEL skin is a second page over the same app.js; it is served at /eva/ so the
+// Debug tab's theme switch works in this window too (AppImage included)
+const EVA_INDEX: &str = include_str!("../../web/eva/index.html");
+const EVA_CSS: &str = include_str!("../../web/eva/eva.css");
+const EVA_JS: &str = include_str!("../../web/eva/eva.js");
 // the udev rule travels inside the binary: --install-rule writes it and reloads udev
 const RULES: &str = include_str!("../99-s700-hid.rules");
 const RULES_PATH: &str = "/etc/udev/rules.d/99-s700-hid.rules";
@@ -531,6 +536,10 @@ fn handle(host: &Host, mut conn: TcpStream) -> std::io::Result<()> {
             &mut conn,
             "the mouse does not answer GetFeature: there is nothing to read (docs/PROTOCOL.md §4)",
         ),
+        ("GET", "/eva") => {
+            conn.write_all(b"HTTP/1.1 302 Found\r\nLocation: /eva/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")?;
+            conn.flush()
+        }
         ("GET", p) => match asset(p) {
             Some((ctype, bytes)) => respond(&mut conn, "200 OK", ctype, bytes),
             None => respond(&mut conn, "404 Not Found", "text/plain", b"no such file"),
@@ -545,11 +554,19 @@ fn find_body_start(head: &[u8]) -> Option<usize> {
 
 /// The HTML travels with the shim injected: the API definition has to exist
 /// before bridge.js runs.
-fn index_html() -> String {
-    INDEX.replace(
+fn with_bridge(src: &'static str) -> String {
+    src.replace(
         "</head>",
         "<script>window.__S700_API__ = \"/api\";</script>\n<script src=\"/bridge.js\"></script>\n</head>",
     )
+}
+
+fn index_html() -> String {
+    with_bridge(INDEX)
+}
+
+fn eva_html() -> String {
+    with_bridge(EVA_INDEX)
 }
 
 fn asset(path: &str) -> Option<(&'static str, &'static [u8])> {
@@ -560,6 +577,14 @@ fn asset(path: &str) -> Option<(&'static str, &'static [u8])> {
             let bytes = INDEX_HTML.get_or_init(|| index_html().into_bytes());
             return Some(("text/html; charset=utf-8", bytes.as_slice()));
         }
+        // the EVA page sits in its own directory: ./eva.css, ../app.js, ../mouse.png
+        "/eva/" | "/eva/index.html" => {
+            static EVA_HTML: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+            let bytes = EVA_HTML.get_or_init(|| eva_html().into_bytes());
+            return Some(("text/html; charset=utf-8", bytes.as_slice()));
+        }
+        "/eva/eva.css" => ("text/css; charset=utf-8", EVA_CSS.as_bytes()),
+        "/eva/eva.js" => (js, EVA_JS.as_bytes()),
         "/style.css" => ("text/css; charset=utf-8", STYLE.as_bytes()),
         "/app.js" => (js, APP.as_bytes()),
         "/g6.js" => (js, G6.as_bytes()),

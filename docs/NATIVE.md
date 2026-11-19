@@ -85,6 +85,11 @@ Host routes: `GET /api/devices`, `GET /api/state`, `POST /api/open`,
 `POST /api/send`, `POST /api/recv` (always fails: the firmware does not answer
 GetFeature, `docs/PROTOCOL.md` §4).
 
+Pages: `/` (the classic console) and `/eva/` (the ORIEL skin, embedded too, with the
+same bridge injected), so *Debug → Theme* switches skin inside the window. `/eva` without
+the trailing slash redirects, because the skin resolves `./eva.css`, `../app.js` and
+`../mouse.png` relative to its own directory.
+
 ## Permissions
 
 **Windows**: nothing. The process opens the device like any other file;

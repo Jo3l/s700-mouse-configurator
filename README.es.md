@@ -18,6 +18,7 @@
 | **Linux, sin instalar nada** | [`S700-configurator-x86_64.AppImage`](https://github.com/Jo3l/s700-mouse-configurator/releases/latest) — un solo fichero: `chmod +x` y a correr; lleva WebKitGTK dentro |
 | **Linux** | [`s700-host-linux-x86_64`](https://github.com/Jo3l/s700-mouse-configurator/releases/latest) — ejecútalo; si no puede abrir el ratón te ofrece instalar la regla udev y te pide la contraseña una vez |
 | **un solo fichero HTML** | `S700-configurator.html` de la release: se abre con doble clic en Chrome/Edge/Brave, sin servidor |
+| **el aspecto alternativo** | *Debug → Theme* cambia entre la consola normal y **ORIEL** (EVA-01), o abre <https://jo3l.github.io/s700-mouse-configurator/eva/> directamente en el navegador |
 
 Los binarios los compila GitHub Actions al publicar cada versión
 ([`.github/workflows/release.yml`](.github/workflows/release.yml)), y la web se
@@ -51,7 +52,7 @@ comparan byte a byte con lo que escribe el programa original.
 | **Perfiles** | 4 perfiles de botones, con el activo a golpe de botón |
 | **Backup** | exportar/importar la configuración completa en un JSON; la imagen de fábrica va incluida |
 | **Guardado** | todo cambio se guarda solo en el navegador; al ratón solo se escribe cuando pulsas **Apply** |
-| **Debug** | dispositivo y regla udev, sonda de bytes, imagen de memoria y volcado hex, el tráfico HID, los tres modos de tecla y una sonda que escribe cuatro formas de tecla en cuatro botones en un solo Apply |
+| **Debug** | dispositivo y regla udev, sonda de bytes, imagen de memoria y volcado hex, el tráfico HID, los tres modos de tecla, una sonda que escribe cuatro formas de tecla en cuatro botones en un solo Apply y el **cambio de tema** entre las dos pieles |
 
 ![Pestaña Lighting: efectos, brillo y los 13 colores](docs/img/lighting.png)
 
@@ -87,6 +88,15 @@ ninguna; `make build-eva` compila sólo la segunda y `make test` valida ambas
 (`tools/test_ui_eva.mjs` comprueba que la página nueva trae todos los controles que pide app.js).
 La piel conserva las pilas tipográficas del diseño con sustituto del sistema y dibuja el
 lattice del fondo en un canvas 2D, así que el fichero único sigue funcionando sin red y sin CDN.
+
+**Para cambiar de una a otra: *Debug → Theme*.** El desplegable de arriba de la pestaña Debug
+abre la otra piel, sea cual sea la forma en que estés usando la herramienta: los binarios y el
+AppImage sirven las dos páginas ellos mismos (`/` y `/eva/`), la publicada tiene su propia
+dirección, <https://jo3l.github.io/s700-mouse-configurator/eva/>, y los dos ficheros únicos
+(`S700-configurator.html` y `S700-configurator-eva.html`) se publican juntos, así que el doble
+clic en cualquiera encuentra a su gemelo. Es una carga de página, no un repintado: antes de
+navegar se guardan en el navegador los cambios sin enviar, la otra piel los recupera y no se
+escribe nada en el ratón hasta que pulses **Apply**.
 
 ## Empezar
 
@@ -247,7 +257,7 @@ make serve     # http://localhost:8099/web/index.html
 make build     # dist/S700-configurator.html + dist/S700-configurator-eva.html
 make build-eva # sólo la piel EVA-01
 make native    # native/target/release/s700-host
-make test      # 309 comprobaciones
+make test      # 315 comprobaciones
 ```
 
 Las pruebas reproducen bytes capturados del programa original
